@@ -169,6 +169,13 @@ details.menu .pop button:hover{background:var(--surface-2)}
 .matlist{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)}
 .matlist label{display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer}
 .matlist input{margin-top:3px;accent-color:var(--accent)}
+.bq{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 14px;border-top:1px solid var(--line);font-size:13px}
+.bq .ans{color:var(--ok);font-size:12px;margin-top:2px}
+.bkstat{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.bkstat span{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:13px}
+.bkstat b{font-variant-numeric:tabular-nums;color:var(--accent)}
+.steps-inline{display:flex;flex-direction:column;gap:10px;border:1px dashed var(--accent);background:var(--accent-soft);border-radius:10px;padding:12px}
+.steps-inline textarea[readonly]{font-size:12px;color:var(--muted)}
 
 /* classes & materials */
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
@@ -264,6 +271,7 @@ img{max-width:100%}
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-tab="kho" aria-selected="true">Kho đề</button>
       <button role="tab" data-tab="soan" aria-selected="false">Soạn đề</button>
+      <button role="tab" data-tab="nh" aria-selected="false">Ngân hàng</button>
       <button role="tab" data-tab="lop" aria-selected="false">Lớp học</button>
       <button role="tab" data-tab="gt" aria-selected="false">Giáo trình</button>
       <button role="tab" data-tab="cd" aria-selected="false">Cài đặt</button>
@@ -275,6 +283,7 @@ img{max-width:100%}
   <div id="banner"></div>
   <section id="v-kho"></section>
   <section id="v-soan" hidden></section>
+  <section id="v-nh" hidden></section>
   <section id="v-lop" hidden></section>
   <section id="v-gt" hidden></section>
   <section id="v-cd" hidden></section>
@@ -601,10 +610,10 @@ ${m.txt}
 
 /* ================= render: shell ================= */
 function setTab(t){S.tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));
-  ['kho','soan','lop','gt','cd'].forEach(k=>$('#v-'+k).hidden=k!==t);render();window.scrollTo(0,0);}
+  ['kho','soan','nh','lop','gt','cd'].forEach(k=>$('#v-'+k).hidden=k!==t);render();window.scrollTo(0,0);}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)setTab(b.dataset.tab);});
 function render(){renderBanner();renderWho();renderBrand();
-  if(S.tab==='kho')renderKho();if(S.tab==='soan')renderCompose();if(S.tab==='lop')renderLop();if(S.tab==='gt')renderGT();if(S.tab==='cd')renderCD();}
+  if(S.tab==='kho')renderKho();if(S.tab==='soan')renderCompose();if(S.tab==='nh')renderBank();if(S.tab==='lop')renderLop();if(S.tab==='gt')renderGT();if(S.tab==='cd')renderCD();}
 function renderBanner(){let h='';
   if(!S.connected&&S.signedOut)h=`<div class="banner">Không kết nối được máy chủ dữ liệu. Tải lại trang.</div>`;
   else if(S.connected&&S.canWrite===false)h=`<div class="banner info">Tài khoản của bạn chỉ có quyền xem. Muốn tạo lớp và soạn đề, hãy nhờ quản trị đổi vai trò thành <b>Giáo lý viên</b>.</div>`;
@@ -727,19 +736,27 @@ function renderConfig(){
       <label class="f">Yêu cầu riêng cho Claude (không bắt buộc)<textarea id="cf-notes" rows="2" placeholder="Ví dụ: chú trọng 7 Bí tích; có 1 câu tự luận liên hệ đời sống; tránh câu quá dài">${esc(d.notes)}</textarea></label>
       <div class="grid2"><label class="f">Tên bài kiểm tra (in trên đề)<input type="text" id="cf-title" value="${esc(d.title)}" placeholder="Ví dụ: Kiểm tra Giáo lý Học kỳ I"></label>
         <label class="f">Người ra đề (in trên mã đề và ô ký)<input type="text" id="cf-author" value="${esc(d.authorName)}" placeholder="Tên Thánh, họ và tên"></label></div>
-      <div class="row" id="genrow"></div></div>`;
+      ${bankFor(d.classId).length?`<div><div class="small muted" style="margin-bottom:4px;font-weight:500">Bộ câu hỏi dùng để bốc đề (ngân hàng)</div><div class="matlist">${bankFor(d.classId).map(b=>`<label><input type="checkbox" name="bkset" value="${b.id}" ${!d.bankIds||d.bankIds.includes(b.id)?'checked':''}><span>${esc(b.title||'Bộ câu hỏi')} <span class="muted small">· ${(b.questions||[]).length} câu</span></span></label>`).join('')}</div></div>`:''}
+      <div class="row" id="genrow"></div>
+      <div class="steps-inline" id="manualbox" ${S.manual?'':'hidden'}>
+        <b>Soạn qua claude.ai (không cần khoá API)</b>
+        <label class="f">1. Câu lệnh đã tạo sẵn (gồm giáo trình và yêu cầu)<textarea id="mn-prompt" rows="3" readonly>${esc(S.manualPrompt||'')}</textarea></label>
+        <div class="row"><button class="btn primary" data-a="mncopy">2. Sao chép câu lệnh</button><a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener">3. Mở claude.ai ↗</a></div>
+        <label class="f">4. Dán toàn bộ câu trả lời của Claude vào đây<textarea id="mn-paste" rows="4" placeholder='{"title": "...", "questions": [ ... ]}'>${esc(S.manualPaste||'')}</textarea></label>
+        <div class="row"><button class="btn primary" data-a="mnimport">5. Đưa vào đề</button><button class="btn ghost" data-a="mnclose">Đóng</button></div>
+      </div></div>`;
   renderGen();
 }
 function planText(objN,objT,ess){if(objT>10)return `<span style="color:var(--bad);font-weight:600">Phần khách quan ${fmt(objT)} điểm vượt quá 10. Giảm số câu hoặc điểm mỗi câu.</span>`;
   return `Dự kiến: ${objN} câu khách quan = <b>${fmt(objT)}</b> điểm${ess?` · ${ess} câu tự luận = <b>${fmt(10-objT)}</b> điểm`:''} · Tổng 10 điểm.`;}
 function renderGen(){const el=$('#genrow');if(!el)return;
   if(S.gen){el.innerHTML=`<div class="gen-status"><span class="spinner"></span><span>${esc(S.gen.phase)}${S.gen.chars?` (${S.gen.chars.toLocaleString('vi-VN')} ký tự)`:''}</span></div><button class="btn sm" data-a="stop">Dừng</button>`;return;}
-  el.innerHTML=`<button class="btn primary" data-a="gen" ${S.sample?'':'disabled'}>${S.draft.questions.length?'Soạn lại toàn bộ bằng Claude':'Soạn đề bằng Claude'}</button><span class="hint">${S.sample?'Claude chỉ dựa vào giáo trình đã chọn. Mất khoảng 30–90 giây.':'Máy chủ chưa cài khoá API Claude (hoặc tài khoản chỉ xem); bạn có thể thêm câu hỏi thủ công bên dưới.'}</span>`;}
+  el.innerHTML=`<button class="btn primary" data-a="gen" ${S.sample?'':'disabled'}>${S.draft.questions.length?'Soạn lại toàn bộ bằng Claude':'Soạn đề bằng Claude'}</button><button class="btn" data-a="pick" ${bankQs(S.draft.classId,S.draft.bankIds).length?'':'disabled'} title="Bốc ngẫu nhiên từ ngân hàng câu hỏi của lớp">Bốc từ ngân hàng (${bankQs(S.draft.classId,S.draft.bankIds).length} câu)</button><button class="btn" data-a="manual">Soạn qua claude.ai</button><span class="hint">${S.sample?'Claude chỉ dựa vào giáo trình đã chọn. Mất khoảng 30–90 giây.':'Máy chủ chưa cài khoá API Claude (hoặc tài khoản chỉ xem); bạn có thể thêm câu hỏi thủ công bên dưới.'}</span>`;}
 function renderQList(){
   const d=S.draft;const el=$('#qlist');if(!el)return;const tot=totalPts(d);
   $('#qtools').innerHTML=`<div class="qtools"><div class="ptsum">Tổng: <b>${d.questions.length}</b> câu · <b>${fmt(tot)}</b> điểm ${d.questions.length&&Math.abs(tot-10)>0.001?'<span class="warn">≠ 10 điểm</span>':''}<button class="btn sm" data-a="redist" ${d.questions.length?'':'disabled'}>Chia lại điểm</button></div>
-    <details class="menu down"><summary class="btn sm">+ Thêm câu ▾</summary><div class="pop">${Object.entries(QT).map(([k,l])=>`<button data-a="add" data-t="${k}">${l}</button>`).join('')}</div></details></div>`;
-  if(!d.questions.length){el.innerHTML=`<div class="empty"><h3>Chưa có câu hỏi</h3><p>Bấm “Soạn đề bằng Claude” ở trên, hoặc “+ Thêm câu” để soạn tay.</p></div>`;return;}
+    ${d.questions.length&&writable()?'<button class="btn sm" data-a="tobank" title="Lưu các câu của đề này vào ngân hàng câu hỏi của lớp">Lưu vào ngân hàng</button>':''}<details class="menu down"><summary class="btn sm">+ Thêm câu ▾</summary><div class="pop">${Object.entries(QT).map(([k,l])=>`<button data-a="add" data-t="${k}">${l}</button>`).join('')}</div></details></div>`;
+  if(!d.questions.length){el.innerHTML=`<div class="empty"><h3>Chưa có câu hỏi</h3><p>Bấm “Soạn đề bằng Claude”, “Bốc từ ngân hàng” hoặc “Soạn qua claude.ai” ở trên, hoặc “+ Thêm câu” để soạn tay.</p></div>`;return;}
   let last='';let n=0;
   el.innerHTML=d.questions.map((q,i)=>{n++;const sec=q.type==='essay'?'PHẦN TỰ LUẬN':'PHẦN TRẮC NGHIỆM';const h=sec!==last?`<div class="qsec">${sec}</div>`:'';last=sec;
     let body='';
@@ -767,6 +784,7 @@ function refreshPtsum(){const d=S.draft;const tot=totalPts(d);const box=$('#qtoo
   let w=box.querySelector('.warn');const bad=d.questions.length&&Math.abs(tot-10)>0.001;if(bad&&!w){w=document.createElement('span');w.className='warn';w.textContent='≠ 10 điểm';box.insertBefore(w,box.querySelector('button'));}if(!bad&&w)w.remove();}
 
 $('#v-soan').addEventListener('input',e=>{const t=e.target;const d=S.draft;if(!d)return;
+  if(t.id==='mn-paste'){S.manualPaste=t.value;return;}
   if(t.closest('#cfg')){const id=t.id;
     const map={'cf-scope':'scope','cf-notes':'notes','cf-title':'title','cf-author':'authorName'};
     if(map[id])d[map[id]]=t.value;
@@ -782,7 +800,8 @@ $('#v-soan').addEventListener('input',e=>{const t=e.target;const d=S.draft;if(!d
   if(f==='rubric')q.rubric=t.value.split('\n').map(l=>{const m=l.split('|');return {idea:m[0].trim(),points:+(String(m[1]||'').replace(',','.').trim())||0};}).filter(r=>r.idea);
   dirty();});
 $('#v-soan').addEventListener('change',e=>{const t=e.target;const d=S.draft;if(!d)return;
-  if(t.id==='cf-class'){d.classId=t.value;d.materialIds=S.materials.filter(m=>m.classId===t.value).map(m=>m.id);renderConfig();dirty();return;}
+  if(t.name==='bkset'){d.bankIds=[...document.querySelectorAll('input[name=bkset]:checked')].map(x=>x.value);renderGen();return;}
+  if(t.id==='cf-class'){d.bankIds=null;d.classId=t.value;d.materialIds=S.materials.filter(m=>m.classId===t.value).map(m=>m.id);renderConfig();dirty();return;}
   if(t.name==='mat'){d.materialIds=[...document.querySelectorAll('input[name=mat]:checked')].map(x=>x.value);return;}
   if(t.id==='cf-type'){d.type=t.value;d.duration=TYPES[t.value].dur;$('#cf-dur').value=d.duration;dirty();return;}
   if(t.name==='fmt'){d.format=t.value;const f=FORMAT_DEFAULTS[t.value];d.counts={mc:f.mc,tf:f.tf,fill:f.fill,essay:f.essay};d.objEach=f.each;renderConfig();dirty();return;}
@@ -797,6 +816,19 @@ $('#v-soan').addEventListener('click',async e=>{const t=e.target.closest('[data-
   if(t.dataset.pv){S.paperView=t.dataset.pv;t.parentElement.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b===t));renderPreview();return;}
   const a=t.dataset.a;const card=t.closest('.qcard');const i=card?+card.dataset.i:-1;
   if(a==='gen')generate();
+  if(a==='pick'){const r=pickFromBank(d);if(!r.qs.length){toast('Ngân hàng chưa có câu hỏi phù hợp với số câu đã chọn.');return;}
+    d.questions=r.qs;d.gradingNotes=[];normalizeOrder(d);distribute(d);renderComposeAll();dirty();
+    toast(r.short.length?'Ngân hàng chưa đủ câu: '+r.short.join('; '):`Đã bốc ${r.qs.length} câu. Bấm lại để bốc đề khác.`);}
+  if(a==='manual'){if(!d.materialIds.length){toast('Hãy chọn ít nhất một giáo trình làm căn cứ.');return;}
+    t.disabled=true;try{const r=await examPromptFor(d);S.manualPrompt=r.prompt;S.manual=true;renderConfig();
+      if(r.cut)toast('Giáo trình dài, câu lệnh chỉ lấy phần đầu (~110.000 ký tự).');$('#manualbox')?.scrollIntoView({block:'nearest'});}
+    catch(e){toast('Không đọc được giáo trình ('+(e?.code||e?.message||'lỗi')+').');t.disabled=false;}}
+  if(a==='mncopy')copyFrom('mn-prompt');
+  if(a==='mnclose'){S.manual=false;$('#manualbox').hidden=true;}
+  if(a==='mnimport'){try{const r=parsePasted($('#mn-paste').value);d.questions=r.questions;d.gradingNotes=r.gradingNotes;if(!d.title&&r.title)d.title=r.title;
+      normalizeOrder(d);distribute(d);S.manual=false;S.manualPaste='';renderComposeAll();dirty();toast(`Đã đưa ${r.questions.length} câu vào đề. Hãy rà soát trước khi lưu.`);}
+    catch(e){toast(e.message);}}
+  if(a==='tobank'){const n=await saveBank(d.classId,'Từ đề: '+(d.title||'chưa đặt tên'),d.questions);if(n!=null)renderQList();}
   if(a==='stop')S.gen?.ctl.abort();
   if(a==='redist'){distribute(d);renderQList();dirty();toast('Đã chia lại điểm cho tổng 10.');}
   if(a==='add'){t.closest('details')?.removeAttribute('open');d.questions.push(blankQ(t.dataset.t));normalizeOrder(d);distribute(d);renderQList();dirty();}
@@ -822,6 +854,140 @@ async function saveDraft(submit){
   const ok=await safeWrite(()=>ref.set(rec),submit?'Đã lưu và gửi duyệt.':'Đã lưu đề '+rec.code+'.');
   if(ok){S.draft={...rec,id:ref.id};$('#savestate').textContent='Đã lưu · bản '+rec.version;const h=$('#v-soan .page-head p');if(h)h.innerHTML='Mã đề <span class="code">'+esc(rec.code)+'</span>';}
 }
+
+/* ================= Ngân hàng câu hỏi ================= */
+const BANK_MAX=150;
+Object.assign(S,{bank:[],bankClass:'',bankOpen:null,bankPrompt:'',bankPaste:'',bankTitle:'',bankCounts:{mc:20,tf:8,fill:8,essay:4},bankMats:null,bankMatsCls:'',bankBusy:'',manual:false,manualPrompt:'',manualPaste:''});
+const normQ=t=>noMark(String(t||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+const bankFor=cid=>S.bank.filter(b=>b.classId===cid);
+function bankQs(cid,ids){return bankFor(cid).filter(b=>!ids||!ids.length||ids.includes(b.id)).flatMap(b=>(b.questions||[]).map(q=>({...q,_b:b.id})));}
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function shuffleOpts(q){if(q.options.some(o=>/(câu|đáp án|phương án|ý)\s*[A-D]\b|\b[A-D]\s*(và|,|hoặc)\s*[A-D]\b|tất cả|cả hai|cả ba|đều đúng|đều sai|không có câu/i.test(o)))return;
+  const right=q.options['ABCD'.indexOf(q.answer)];const opts=shuffle(q.options);q.options=opts;q.answer='ABCD'[Math.max(0,opts.indexOf(right))];}
+function pickFromBank(d){
+  const pool=bankQs(d.classId,d.bankIds);const used=new Set();const out=[];const short=[];
+  const tot=d.levels.reduce((a,b)=>a+(+b||0),0)||1;
+  for(const t of ['mc','tf','fill','essay']){const n=d.counts[t]||0;if(!n)continue;
+    const cand=shuffle(pool.filter(q=>q.type===t&&!used.has(normQ(q.text))));const chosen=[];
+    LEVELS.forEach((l,i)=>{let k=Math.round(n*(+d.levels[i]||0)/tot);for(const q of cand){if(k<=0||chosen.length>=n)break;if(q.level===l&&!chosen.includes(q)){chosen.push(q);k--;}}});
+    for(const q of cand){if(chosen.length>=n)break;if(!chosen.includes(q))chosen.push(q);}
+    if(chosen.length<n)short.push(`${QT[t]} cần ${n}, chỉ có ${chosen.length}`);
+    chosen.forEach(q=>{used.add(normQ(q.text));const c=clone(q);delete c._b;const cq=cleanQ(c);if(cq.type==='mc')shuffleOpts(cq);out.push(cq);});}
+  return {qs:out,short};}
+function parsePasted(txt){
+  const t=String(txt||'').replace(/```(?:json)?/gi,'').trim();if(!t)throw new Error('Chưa dán kết quả của Claude.');
+  let out=null;const a=t.indexOf('{'),b=t.lastIndexOf('}');
+  if(a>=0&&b>a){try{out=JSON.parse(t.slice(a,b+1));}catch{}}
+  if(!out){const c=t.indexOf('['),e=t.lastIndexOf(']');if(c>=0&&e>c){try{out=JSON.parse(t.slice(c,e+1));}catch{}}}
+  if(!out)throw new Error('Không đọc được kết quả. Hãy sao chép TOÀN BỘ câu trả lời của Claude (có cả dấu { đầu và } cuối). Nếu Claude trả lời bị cắt ngang, hãy yêu cầu số câu ít hơn.');
+  if(Array.isArray(out))out={questions:out};
+  const qs=(out.questions||[]).map(cleanQ).filter(q=>q.text);
+  if(!qs.length)throw new Error('Kết quả không có câu hỏi nào.');
+  return {questions:qs,title:out.title?String(out.title):'',gradingNotes:(out.gradingNotes||[]).map(String).filter(Boolean)};}
+function copyFrom(id){const el=document.getElementById(id);if(!el)return;const v=el.value;
+  const manual=()=>{el.focus();el.select();toast('Đã chọn sẵn câu lệnh, nhấn Ctrl + C để sao chép.');};
+  try{navigator.clipboard.writeText(v).then(()=>toast('Đã sao chép. Mở claude.ai, dán vào ô chat (Ctrl + V) và gửi.'),manual);}catch{manual();}}
+async function examPromptFor(d){const c=clsOf(d.classId);const m=await draftMaterial(d);const cnt=d.counts;
+  return {cut:m.cut,prompt:`${basePrompt(d,c)}
+Số lượng câu (bắt buộc đúng): ${cnt.mc} câu trắc nghiệm (type "mc"), ${cnt.tf} câu Đúng/Sai (type "tf"), ${cnt.fill} câu điền khuyết (type "fill"), ${cnt.essay} câu tự luận (type "essay").
+Trả về DUY NHẤT một đối tượng JSON hợp lệ (không giải thích thêm) theo mẫu:
+${SCHEMA}
+
+GIÁO TRÌNH CỦA LỚP:
+<<<
+${m.txt}
+>>>`};}
+function bankPrompt(c,txt,cnt,scope){return `Bạn là giáo lý viên giàu kinh nghiệm, chuyên ra câu hỏi kiểm tra giáo lý Công giáo bằng tiếng Việt.
+Hãy soạn một NGÂN HÀNG CÂU HỎI cho lớp ${c?.name||''}${c?.branch?' (ngành '+c.branch+')':''}. Ngân hàng này dùng để bốc ngẫu nhiên ra nhiều đề kiểm tra khác nhau.
+${scope?'Phạm vi: CHỈ ra câu hỏi trong '+scope+'.':'Phạm vi: phủ đều tất cả các bài trong giáo trình.'}
+Số lượng (bắt buộc đúng): ${cnt.mc} câu trắc nghiệm (type "mc"), ${cnt.tf} câu Đúng/Sai (type "tf"), ${cnt.fill} câu điền khuyết (type "fill"), ${cnt.essay} câu tự luận (type "essay").
+Nguyên tắc:
+- CHỈ dựa vào nội dung giáo trình bên dưới; giữ đúng thuật ngữ, danh xưng và tín lý theo Giáo lý Hội Thánh Công giáo.
+- Mỗi câu kiểm tra một ý riêng, không trùng ý nhau; câu rõ ràng, phù hợp lứa tuổi, không đánh đố.
+- Mức độ trộn đều: khoảng 40% "Nhận biết", 40% "Thông hiểu", 20% "Vận dụng".
+- Trắc nghiệm: 4 lựa chọn, đúng 1 đáp án, phân bố đáp án đúng đều giữa A, B, C, D; không dùng phương án kiểu "Cả A và B".
+- Đúng/Sai: khoảng một nửa là Sai. Điền khuyết: một chỗ trống "______", đáp án là từ/cụm từ có trong giáo trình.
+- Tự luận: kèm đáp án mẫu, các ý chấm (rubric) có điểm, số dòng kẻ (3–12) và điểm của câu (1–3 điểm).
+- Mỗi câu ghi "source" (bài/mục làm căn cứ) và "level".
+Trả về DUY NHẤT một đối tượng JSON hợp lệ (không giải thích thêm) theo mẫu:
+${SCHEMA}
+
+GIÁO TRÌNH CỦA LỚP:
+<<<
+${txt}
+>>>`;}
+async function saveBank(cid,title,qs){
+  if(!writable()){toast('Bạn không có quyền thêm vào ngân hàng.');return null;}
+  const seen=new Set(bankQs(cid).map(q=>normQ(q.text)));const fresh=[];
+  for(const q of qs){const k=normQ(q.text);if(!k||seen.has(k))continue;seen.add(k);const c=cleanQ(clone(q));if(c.type!=='essay')c.points=0;fresh.push(c);}
+  const skipped=qs.length-fresh.length;
+  if(!fresh.length){toast('Tất cả câu hỏi đã có sẵn trong ngân hàng.');return 0;}
+  const now=Date.now();
+  const ok=await safeWrite(async()=>{for(let i=0;i<fresh.length;i+=BANK_MAX)await S.db.collection('bank').add({classId:cid,title:title||'Bộ câu hỏi',questions:fresh.slice(i,i+BANK_MAX),createdAt:now+i,createdBy:S.uid});},
+    `Đã thêm ${fresh.length} câu vào ngân hàng${skipped?` (bỏ qua ${skipped} câu trùng)`:''}.`);
+  return ok?fresh.length:null;}
+function renderBank(){
+  const v=$('#v-nh');if(!v)return;
+  const keep=id=>{const el=document.getElementById(id);return el?el.value:null;};
+  const kp=keep('bk-paste');if(kp!=null)S.bankPaste=kp;const kt=keep('bk-title');if(kt!=null)S.bankTitle=kt;
+  if(!S.bankClass||!clsOf(S.bankClass))S.bankClass=S.classes[0]?.id||'';
+  if(!S.classes.length){v.innerHTML=`<div class="page-head"><div><h1>Ngân hàng câu hỏi</h1></div></div><div class="empty"><h3>Chưa có lớp</h3><p>Tạo lớp và nhập giáo trình trước.</p><button class="btn primary" onclick="setTab('lop')">Tạo lớp</button></div>`;return;}
+  const batches=bankFor(S.bankClass).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const all=batches.flatMap(b=>b.questions||[]);const cnt=t=>all.filter(q=>q.type===t).length;
+  const mats=S.materials.filter(m=>m.classId===S.bankClass);
+  if(S.bankMats===null||S.bankMatsCls!==S.bankClass){S.bankMats=mats.map(m=>m.id);S.bankMatsCls=S.bankClass;}
+  const bc=S.bankCounts;
+  v.innerHTML=`<div class="page-head"><div><h1>Ngân hàng câu hỏi</h1><p>Lưu sẵn nhiều câu hỏi cho mỗi lớp. Khi soạn đề, bấm “Bốc từ ngân hàng” để ứng dụng tự chọn ngẫu nhiên, không cần Claude.</p></div></div>
+  <div class="filters"><select id="bk-cls" aria-label="Chọn lớp">${S.classes.map(c=>`<option value="${c.id}" ${c.id===S.bankClass?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+  <div class="bkstat"><span>Tổng <b>${all.length}</b> câu</span>${Object.entries(QT).map(([k,l])=>`<span>${l} <b>${cnt(k)}</b></span>`).join('')}</div>
+  ${writable()?`<div class="panel" style="margin-bottom:16px"><h2>Thêm câu hỏi vào ngân hàng</h2><div class="stack">
+    <label class="f">Tên bộ câu hỏi / phạm vi<input type="text" id="bk-title" value="${esc(S.bankTitle)}" placeholder="Ví dụ: Bài 1 đến Bài 5"></label>
+    <div><div class="small muted" style="margin-bottom:4px;font-weight:500">Giáo trình làm căn cứ</div>${mats.length?`<div class="matlist">${mats.map(m=>`<label><input type="checkbox" name="bkmat" value="${m.id}" ${S.bankMats.includes(m.id)?'checked':''}><span>${esc(m.title)}</span></label>`).join('')}</div>`:`<div class="empty" style="padding:12px">Lớp này chưa có giáo trình. <a href="#" onclick="S.matClass='${S.bankClass}';setTab('gt');return false">Nhập giáo trình</a></div>`}</div>
+    <div class="grid4">${Object.entries(QT).map(([k,l])=>`<label class="f">${l}<input type="number" min="0" max="80" id="bk-${k}" value="${bc[k]}"></label>`).join('')}</div>
+    <div class="hint">Mỗi lượt nên khoảng 40 câu để Claude trả lời trọn vẹn. Muốn nhiều câu hơn, làm nhiều lượt theo từng nhóm bài (ghi phạm vi ở ô trên).</div>
+    <div class="row"><button class="btn primary" data-a="bkprompt" ${mats.length?'':'disabled'}>Soạn qua claude.ai</button>${S.sample?`<button class="btn" data-a="bkgen" ${mats.length?'':'disabled'}>Tạo trực tiếp bằng Claude</button>`:''}</div>
+    <div class="gen-status" id="bk-status">${S.bankBusy?`<span class="spinner"></span><span>${esc(S.bankBusy)}</span>`:''}</div>
+    <div class="steps-inline" id="bk-manual" ${S.bankPrompt?'':'hidden'}>
+      <label class="f">1. Câu lệnh đã tạo sẵn<textarea id="bk-prompt" rows="3" readonly>${esc(S.bankPrompt)}</textarea></label>
+      <div class="row"><button class="btn primary" data-a="bkcopy">2. Sao chép câu lệnh</button><a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener">3. Mở claude.ai ↗</a></div>
+      <label class="f">4. Dán toàn bộ câu trả lời của Claude vào đây<textarea id="bk-paste" rows="5" placeholder='{"title": "...", "questions": [ ... ]}'>${esc(S.bankPaste)}</textarea></label>
+      <div><button class="btn primary" data-a="bkimport">5. Lưu vào ngân hàng</button></div>
+    </div></div></div>`:''}
+  ${batches.length?`<div class="exlist">${batches.map(b=>{const qs=b.questions||[];const by=Object.keys(QT).map(k=>[QT[k],qs.filter(q=>q.type===k).length]).filter(x=>x[1]).map(x=>x[0]+' '+x[1]).join(' · ');
+    return `<div><div class="mrow"><div style="min-width:0"><div style="font-weight:600">${esc(b.title||'Bộ câu hỏi')}</div><div class="small muted">${qs.length} câu · ${esc(by)} · ${dmy(b.createdAt)}</div></div>
+      <div class="row" style="gap:6px"><button class="btn sm" data-a="bkview" data-id="${b.id}">${S.bankOpen===b.id?'Ẩn':'Xem'}</button>${writable()?`<button class="btn sm ghost danger" data-a="bkdel" data-id="${b.id}">Xoá bộ</button>`:''}</div></div>
+      ${S.bankOpen===b.id?qs.map((q,i)=>`<div class="bq"><span class="chip">${QT[q.type]}</span><div style="min-width:0">${esc(q.text)}<div class="ans">Đáp án: ${esc(q.type==='mc'?q.answer+'. '+(q.options['ABCD'.indexOf(q.answer)]||''):q.answer)}</div>${q.type==='mc'?`<div class="small muted">${q.options.map((o,j)=>'ABCD'[j]+'. '+esc(o)).join(' · ')}</div>`:''}<div class="small muted">${esc(q.level)}${q.source?' · '+esc(q.source):''}</div></div>${writable()?`<button class="iconbtn" data-a="bkqdel" data-id="${b.id}" data-i="${i}" aria-label="Xoá câu" title="Xoá câu này">✕</button>`:'<span></span>'}</div>`).join(''):''}</div>`;}).join('')}</div>`
+  :`<div class="empty"><h3>Ngân hàng của lớp này còn trống</h3><p>Soạn câu hỏi qua claude.ai ở khung trên, hoặc mở một đề đã soạn và bấm “Lưu vào ngân hàng”.</p></div>`}`;
+}
+$('#v-nh').addEventListener('change',e=>{const t=e.target;
+  if(t.id==='bk-cls'){S.bankClass=t.value;S.bankPrompt='';S.bankPaste='';S.bankOpen=null;renderBank();}
+  if(t.name==='bkmat')S.bankMats=[...document.querySelectorAll('input[name=bkmat]:checked')].map(x=>x.value);});
+$('#v-nh').addEventListener('input',e=>{const t=e.target;
+  if(/^bk-(mc|tf|fill|essay)$/.test(t.id))S.bankCounts[t.id.slice(3)]=Math.max(0,Math.round(+t.value||0));
+  if(t.id==='bk-paste')S.bankPaste=t.value;if(t.id==='bk-title')S.bankTitle=t.value;});
+async function bankMaterial(){const ids=S.bankMats||[];if(!ids.length)throw new Error('Hãy chọn ít nhất một giáo trình.');
+  let txt=(await Promise.all(S.materials.filter(m=>ids.includes(m.id)).map(async m=>`### ${m.title}\n${await materialText(m.id)}`))).join('\n\n');
+  const cut=txt.length>MAX_MATERIAL;return {txt:cut?txt.slice(0,MAX_MATERIAL):txt,cut};}
+$('#v-nh').addEventListener('click',async e=>{const t=e.target.closest('[data-a]');if(!t)return;const a=t.dataset.a,id=t.dataset.id;
+  const cnt=S.bankCounts;const c=clsOf(S.bankClass);
+  if(a==='bkprompt'||a==='bkgen'){if(cnt.mc+cnt.tf+cnt.fill+cnt.essay<1){toast('Số câu đang bằng 0.');return;}
+    try{S.bankBusy='Đang đọc giáo trình…';renderBank();const m=await bankMaterial();const prompt=bankPrompt(c,m.txt,cnt,S.bankTitle.trim());
+      if(m.cut)toast('Giáo trình dài, chỉ dùng phần đầu (~110.000 ký tự). Nên chọn ít giáo trình hơn mỗi lượt.');
+      if(a==='bkprompt'){S.bankBusy='';S.bankPrompt=prompt;renderBank();$('#bk-manual')?.scrollIntoView({block:'nearest'});return;}
+      S.bankBusy='Claude đang soạn câu hỏi… (1–3 phút)';renderBank();
+      const out=await S.sample.json(prompt,{modelTier:'default',cache:false});const qs=(out?.questions||[]).map(cleanQ).filter(q=>q.text);
+      S.bankBusy='';renderBank();if(!qs.length){toast('Không nhận được câu hỏi nào. Thử lại.');return;}
+      await saveBank(S.bankClass,S.bankTitle.trim()||out.title||'Bộ câu hỏi',qs);}
+    catch(err){S.bankBusy='';renderBank();toast(err?.message&&!err.code?err.message:'Không tạo được câu hỏi ('+(err?.code||'lỗi')+').');}}
+  if(a==='bkcopy')copyFrom('bk-prompt');
+  if(a==='bkimport'){try{const r=parsePasted($('#bk-paste').value);const n=await saveBank(S.bankClass,S.bankTitle.trim()||r.title||'Bộ câu hỏi',r.questions);
+      if(n!=null){S.bankPaste='';S.bankPrompt='';S.bankTitle='';renderBank();}}catch(err){toast(err.message);}}
+  if(a==='bkview'){S.bankOpen=S.bankOpen===id?null:id;renderBank();}
+  if(a==='bkdel'){if(t.dataset.confirm!=='1'){t.dataset.confirm='1';t.textContent='Bấm lần nữa để xoá';setTimeout(()=>{if(t.isConnected){t.dataset.confirm='';t.textContent='Xoá bộ';}},4000);return;}
+    await safeWrite(()=>S.db.doc('bank/'+id).delete(),'Đã xoá bộ câu hỏi.');}
+  if(a==='bkqdel'){const b=S.bank.find(x=>x.id===id);if(!b)return;const qs=(b.questions||[]).filter((_,i)=>i!==+t.dataset.i);
+    await safeWrite(()=>qs.length?S.db.doc('bank/'+id).update({questions:qs}):S.db.doc('bank/'+id).delete(),'Đã xoá câu hỏi.');}
+});
 
 /* ================= Lớp học ================= */
 function renderLop(){
@@ -947,7 +1113,7 @@ function renderBrand(){const l=S.settings.logo1||S.settings.logo2;$('#brandmark'
 
 /* ================= boot ================= */
 function onErr(e){if(e?.code==='revoked')S.errors='Quyền truy cập đã thay đổi. Tải lại trang.';else S.errors='Mất kết nối dữ liệu ('+(e?.code||'lỗi')+'). Tải lại trang.';renderBanner();}
-function refreshFromData(){renderBanner();renderBrand();if(S.tab==='kho')renderKho();if(S.tab==='lop'&&!S.editClass)renderLop();if(S.tab==='gt')renderGT();if(S.tab==='cd')renderCD();
+function refreshFromData(){renderBanner();renderBrand();if(S.tab==='nh'&&!document.activeElement?.closest('#v-nh .panel'))renderBank();if(S.tab==='kho')renderKho();if(S.tab==='lop'&&!S.editClass)renderLop();if(S.tab==='gt')renderGT();if(S.tab==='cd')renderCD();
   if(S.tab==='soan'&&S.draft){if(!$('#cfg'))renderCompose();else if(!document.activeElement?.closest('#cfg'))renderConfig();schedulePreview();}}
 render();
 (async()=>{
@@ -964,6 +1130,7 @@ render();
     if(S.draft&&!S.draft.id&&!S.draft.materialIds.length)S.draft.materialIds=S.materials.filter(m=>m.classId===S.draft.classId).map(m=>m.id);refreshFromData();},onErr);
   db.collection('exams').orderBy('updatedAt','desc').limit(500).onSnapshot(s=>{S.exams=s.docs.map(d=>({id:d.id,...d.data()}));S.ready.exams=true;refreshFromData();},onErr);
   db.collection('approvals').onSnapshot(s=>{S.approvals=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));refreshFromData();},onErr);
+  db.collection('bank').onSnapshot(s=>{S.bank=s.docs.map(d=>({id:d.id,...d.data()}));S.ready.bank=true;refreshFromData();},onErr);
   db.doc('settings/general').onSnapshot(s=>{S.settings={...DEFAULT_SETTINGS,...(s.exists?s.data():{})};S.ready.settings=true;refreshFromData();},onErr);
   render();
 })();
