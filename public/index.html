@@ -376,7 +376,8 @@ function buildBlocks(ex,view){
   const objTotal=r2(obj.reduce((a,q)=>a+(+q.points||0),0)),essTotal=r2(ess.reduce((a,q)=>a+(+q.points||0),0));
   const roman=['I','II','III','IV'];let sec=0;
   if(view==='de'){
-    B.push(head,{k:'title',text:(ex.title||('Kiểm tra Giáo lý '+className)).toUpperCase(),sub:['Lớp: '+className,ex.scope?'Phạm vi: '+ex.scope:''].filter(Boolean).join('  ·  ')},{k:'student'},{k:'scorebox'},{k:'note',text:st.examNote});
+    const ttl=ex.title||('Kiểm tra Giáo lý '+className);const hasCls=className&&noMark(ttl).toLowerCase().includes(noMark(className).toLowerCase());
+    B.push(head,{k:'title',text:ttl.toUpperCase(),sub:[hasCls?'':'Lớp: '+className,ex.scope?'Phạm vi: '+ex.scope:''].filter(Boolean).join('  ·  ')},{k:'student'},{k:'scorebox'},{k:'note',text:st.examNote});
     let n=0;
     if(obj.length){B.push({k:'h',text:`${roman[sec++]}. PHẦN TRẮC NGHIỆM (${fmt(objTotal)} điểm)`});
       const groups=[['mc','Khoanh tròn chữ cái trước câu trả lời đúng nhất.'],['tf','Đánh dấu X vào ô Đúng hoặc Sai.'],['fill','Điền từ hoặc cụm từ thích hợp vào chỗ trống.']];
@@ -417,7 +418,7 @@ function paperHTML(ex,view){
       const lg=l=>`<div class="pp-logo"><img src="${esc(l.data)}" alt=""></div>`;
       h.push(`<div class="pp-head ${L1&&L2?'l12':L1?'l1x':L2?'l2x':''}">${L1?lg(L1):''}<div>${col(b.left)}</div><div>${col(b.right)}</div>${L2?lg(L2):''}</div>`);break;}
     case 'title':h.push(`<div class="pp-title">${esc(b.text)}</div>`+(b.sub?`<div class="pp-sub">${esc(b.sub)}</div>`:''));break;
-    case 'student':h.push(`<div class="pp-line"><span>Tên Thánh, họ và tên:</span><span class="dots"></span></div><div class="pp-line"><span>Lớp:</span><span class="dots"></span><span>Số thứ tự:</span><span class="dots" style="flex:.6"></span><span>Ngày kiểm tra:</span><span class="dots"></span></div>`);break;
+    case 'student':h.push(`<div class="pp-line"><span>Tên Thánh, họ và tên:</span><span class="dots"></span></div><div class="pp-line"><span>Số thứ tự:</span><span class="dots" style="flex:.6"></span><span>Ngày kiểm tra:</span><span class="dots"></span></div>`);break;
     case 'scorebox':h.push(`<table class="pp-score"><tr><th style="width:22%">ĐIỂM</th><th>LỜI PHÊ CỦA GIÁO LÝ VIÊN</th><th style="width:21%">CHỮ KÝ GLV</th></tr><tr class="tall"><td><div>Bằng số:</div></td><td><div class="dl"></div><div class="dl"></div><div class="dl"></div></td><td></td></tr></table>`);break;
     case 'note':h.push(`<div class="pp-note"><b>Lưu ý:</b> ${esc(b.text)}</div>`);break;
     case 'h':h.push(`<div class="pp-h">${esc(b.text)}</div>`);break;
@@ -471,7 +472,7 @@ function blocksToDocx(ex,view){
       out.push(TBL([{cells}],widths,{noBorder:1}));break;}
     case 'title':out.push(P(R(b.text,{b:1,sz:30}),{align:'center',before:240,after:40}));if(b.sub)out.push(P(R(b.sub,{i:1}),{align:'center',after:160}));break;
     case 'student':out.push(P([R('Tên Thánh, họ và tên: '),TAB],{tabs:[{val:'right',pos:W,leader:'dot'}],after:80,before:60}),
-      P([R('Lớp: '),TAB,R(' Số thứ tự: '),TAB,R(' Ngày kiểm tra: '),TAB],{tabs:[{pos:3300,leader:'dot'},{pos:5400,leader:'dot'},{val:'right',pos:W,leader:'dot'}],after:120}));break;
+      P([R('Số thứ tự: '),TAB,R(' Ngày kiểm tra: '),TAB],{tabs:[{pos:3600,leader:'dot'},{val:'right',pos:W,leader:'dot'}],after:120}));break;
     case 'scorebox':{const dl=()=>P(TAB,{tabs:[{val:'right',pos:5300,leader:'dot'}],after:0,line:380});
       out.push(TBL([{cells:[{ps:[P(R('ĐIỂM',{b:1}),C)],shade:1},{ps:[P(R('LỜI PHÊ CỦA GIÁO LÝ VIÊN',{b:1}),C)],shade:1},{ps:[P(R('CHỮ KÝ GLV',{b:1}),C)],shade:1}]},
         {h:1350,cells:[{ps:[P(R('Bằng số:',{sz:24}),{after:0})]},{ps:[dl(),dl(),dl()]},{ps:[P('')]}]}],[2100,5538,2000]));break;}
