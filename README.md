@@ -1,6 +1,6 @@
 # Soạn Đề Kiểm Tra Giáo Lý
 
-Ứng dụng web soạn đề kiểm tra cho các lớp giáo lý. Ứng dụng chạy trên **Cloudflare Pages**, lấy mã nguồn từ **GitHub** và dùng được **tên miền riêng** của giáo xứ.
+Ứng dụng web soạn đề kiểm tra cho các lớp giáo lý. Ứng dụng chạy trên **Cloudflare Workers** (có kèm trang tĩnh), lấy mã nguồn từ **GitHub** và dùng được **tên miền riêng** của giáo xứ.
 
 Các chức năng chính:
 - Quản lý lớp học và giáo trình (nhập tệp Word, PDF có chữ, .txt, hoặc dán nội dung).
@@ -13,12 +13,13 @@ Các chức năng chính:
 ## Cấu trúc thư mục
 
 ```
-public/                 Giao diện (trang tĩnh)
-  index.html            Ứng dụng
-  shim.js               Lớp kết nối giao diện với máy chủ
-  accounts.js           Đăng nhập, quản lý tài khoản
-functions/api/[[path]].js   Máy chủ: đăng nhập, cơ sở dữ liệu, gọi Claude
-wrangler.toml           Cấu hình Cloudflare (D1, biến môi trường)
+public/            Giao diện (trang tĩnh)
+  index.html       Ứng dụng
+  shim.js          Lớp kết nối giao diện với máy chủ
+  accounts.js      Đăng nhập, quản lý tài khoản
+src/worker.js      Điểm vào của Worker: /api/* → máy chủ, còn lại → trang tĩnh
+src/api.js         Máy chủ: đăng nhập, cơ sở dữ liệu, gọi Claude
+wrangler.toml      Cấu hình Cloudflare (D1, biến môi trường)
 ```
 
 ## Chi phí
@@ -56,38 +57,37 @@ git push -u origin main
 
 Không cần tạo bảng: máy chủ tự tạo bảng ở lần chạy đầu tiên.
 
-### Bước 3: Tạo dự án Cloudflare Pages từ GitHub
+### Bước 3: Tạo Worker kết nối GitHub
 
-1. Vào **Workers & Pages → Create → Pages → Connect to Git**.
-2. Cho phép Cloudflare truy cập GitHub, rồi chọn repo `soan-de-giao-ly`.
-3. Cấu hình build:
-   - **Framework preset:** None
+1. Vào **Workers & Pages → Create application → Import a repository** (phần Workers).
+2. Chọn tài khoản GitHub và repo `soan-de-giao-ly`.
+3. Cấu hình:
+   - **Project name:** `soan-de-giao-ly` (phải trùng dòng `name` trong `wrangler.toml`)
    - **Build command:** để trống
-   - **Build output directory:** `public`
-4. Bấm **Save and Deploy**.
+   - **Deploy command:** `npx wrangler deploy`
+   - **Root directory:** `/`
+4. Bấm **Deploy**. Địa chỉ có dạng `soan-de-giao-ly.<ten-tai-khoan>.workers.dev`.
 
 Cloudflare đọc `wrangler.toml` và tự gắn database D1 với tên biến `DB`.
 
 ### Bước 4: Cài khoá API Claude
 
 1. Vào https://console.anthropic.com. Tạo tài khoản, nạp tiền (Billing), rồi vào **API Keys → Create Key**.
-2. Trong Cloudflare, mở dự án Pages: **Settings → Variables and Secrets → Add**.
+2. Trong Cloudflare, mở Worker `soan-de-giao-ly`: **Settings → Variables and Secrets → Add**.
    - Type: **Secret**
    - Name: `ANTHROPIC_API_KEY`
    - Value: khoá vừa tạo (bắt đầu bằng `sk-ant-...`)
-3. Vào **Deployments**, bấm **Retry deployment** (hoặc commit một thay đổi nhỏ) để áp dụng khoá.
+3. Secret có hiệu lực ngay, không cần triển khai lại.
 
 Tuyệt đối không ghi khoá API vào mã nguồn hay `wrangler.toml`.
 
 ### Bước 5: Gắn tên miền riêng
 
-1. Trong dự án Pages: **Custom domains → Set up a custom domain**.
+1. Trong Worker: **Settings → Domains & Routes → Add → Custom domain**.
 2. Nhập tên miền, ví dụ `dethi.giaoxuabc.org` hoặc `giaoly.giaoxuabc.vn`.
 3. Cách cấu hình tuỳ nơi quản lý tên miền:
    - **Tên miền đã quản lý DNS trên Cloudflare:** Cloudflare tự tạo bản ghi, chỉ cần bấm Activate.
-   - **Tên miền ở nhà cung cấp khác** (Mắt Bão, PA Việt Nam, GoDaddy…): vào trang quản lý DNS ở đó, tạo bản ghi **CNAME**:
-     - Tên: `dethi`
-     - Giá trị: `<ten-du-an>.pages.dev` (Cloudflare hiển thị chính xác giá trị này)
+   - **Tên miền ở nhà cung cấp khác** (Mắt Bão, PA Việt Nam, GoDaddy…): Worker chỉ gắn được tên miền đã quản lý DNS trên Cloudflare. Thêm tên miền vào Cloudflare (**Domains → Onboard a domain**, gói Free), đổi nameserver ở nhà cung cấp sang 2 nameserver Cloudflare đưa, chờ kích hoạt rồi quay lại bước 1.
 4. Chờ vài phút đến vài giờ cho DNS cập nhật. Chứng chỉ HTTPS được cấp tự động.
 
 ### Bước 6: Sử dụng lần đầu
@@ -119,7 +119,7 @@ Nên sao lưu định kỳ, ví dụ mỗi tháng và trước mỗi kỳ thi.
 ## Chạy thử trên máy (tuỳ chọn)
 
 ```bash
-npx wrangler pages dev public --d1 DB=soan-de-giao-ly
+npx wrangler dev
 ```
 
 Khoá API khi chạy thử đặt trong tệp `.dev.vars` (đã có trong `.gitignore`):
