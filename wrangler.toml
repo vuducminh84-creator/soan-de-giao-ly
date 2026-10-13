@@ -1,6 +1,11 @@
 name = "soan-de-giao-ly"
+main = "src/worker.js"
 compatibility_date = "2025-09-01"
-pages_build_output_dir = "public"
+
+# Trang giao diện (thư mục public)
+[assets]
+directory = "./public"
+binding = "ASSETS"
 
 # Cơ sở dữ liệu D1. Thay database_id bằng ID của database bạn tạo trên Cloudflare
 # (Storage & Databases → D1 → soan-de-giao-ly → Database ID).
@@ -16,5 +21,9 @@ CLAUDE_MODEL = "claude-sonnet-5-5"
 CLAUDE_DAILY_LIMIT = "60"
 CLAUDE_MAX_TOKENS = "16000"
 
+# Bật nhật ký để xem lỗi trong tab Observability
+[observability]
+enabled = true
+
 # KHÔNG ghi khoá API vào tệp này. Đặt secret ANTHROPIC_API_KEY trong
-# Cloudflare: Settings → Variables and Secrets → Add → Type: Secret.
+# Cloudflare: Worker soan-de-giao-ly → Settings → Variables and Secrets → Add → Type: Secret.
