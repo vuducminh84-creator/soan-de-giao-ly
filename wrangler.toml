@@ -1,0 +1,20 @@
+name = "soan-de-giao-ly"
+compatibility_date = "2025-09-01"
+pages_build_output_dir = "public"
+
+# Cơ sở dữ liệu D1. Thay database_id bằng ID của database bạn tạo trên Cloudflare
+# (Storage & Databases → D1 → soan-de-giao-ly → Database ID).
+[[d1_databases]]
+binding = "DB"
+database_name = "soan-de-giao-ly"
+database_id = "THAY-BANG-DATABASE-ID-CUA-BAN"
+
+[vars]
+# Model Claude dùng để soạn đề
+CLAUDE_MODEL = "claude-sonnet-5-5"
+# Số lượt soạn bằng Claude tối đa mỗi người mỗi ngày (kiểm soát chi phí)
+CLAUDE_DAILY_LIMIT = "60"
+CLAUDE_MAX_TOKENS = "16000"
+
+# KHÔNG ghi khoá API vào tệp này. Đặt secret ANTHROPIC_API_KEY trong
+# Cloudflare: Settings → Variables and Secrets → Add → Type: Secret.
