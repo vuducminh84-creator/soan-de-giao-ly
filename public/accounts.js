@@ -14,8 +14,24 @@
     if (!me) return;
     const w = document.getElementById('who');
     const b = document.createElement('button');
-    b.className = 'logout'; b.type = 'button'; b.textContent = 'Đăng xuất'; b.onclick = window.__logout;
+    b.className = 'logout'; b.type = 'button';
+    if (me.role === 'guest') { b.textContent = 'Đăng nhập'; b.onclick = () => window.__showLogin(); }
+    else { b.textContent = 'Đăng xuất'; b.onclick = window.__logout; }
     w.appendChild(b);
+    // khách: ẩn các tab chỉ dành cho người biên tập
+    const g = window.__guest && window.__guest();
+    if (me.role === 'guest') {
+      const hide = ['soan', 'cd'].concat(g && g.answers ? [] : ['nh']);
+      document.querySelectorAll('#tabs [data-tab]').forEach((t) => { t.hidden = hide.includes(t.dataset.tab); });
+      if (hide.includes(S.tab)) setTab('kho');
+    }
+  };
+
+  const _renderBanner = renderBanner;
+  renderBanner = function () {
+    const me = window.__me && window.__me();
+    if (!me || me.role !== 'guest') return _renderBanner();
+    document.getElementById('banner').innerHTML = `<div class="banner info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span>Bạn đang xem với tư cách <b>khách</b> (chỉ xem tham khảo). Đăng nhập để soạn đề, sửa đề và xuất tệp Word.</span><button class="btn sm primary" type="button" onclick="window.__showLogin()">Đăng nhập</button></div>`;
   };
 
   const _renderCD = renderCD;
@@ -42,7 +58,7 @@
   function renderAccounts() {
     const el = document.getElementById('acct-panel');
     const me = window.__me && window.__me();
-    if (!el || !me) return;
+    if (!el || !me || me.role === 'guest') return;
     el.innerHTML = `<h2>Tài khoản</h2><div class="stack">
       <p style="margin:0">Bạn đăng nhập là <b>${esc(me.name)}</b> (${esc(me.username)}) · ${ROLE[me.role]}.</p>
       <details><summary class="btn sm" style="display:inline-flex">Đổi mật khẩu</summary>
@@ -50,7 +66,15 @@
           <label class="f">Mật khẩu hiện tại<input type="password" id="pw-old" autocomplete="current-password" required></label>
           <label class="f">Mật khẩu mới (ít nhất 8 ký tự)<input type="password" id="pw-new" autocomplete="new-password" required></label>
           <div><button class="btn primary sm" type="submit">Lưu mật khẩu mới</button></div></form></details>
-      ${me.role === 'admin' ? `<h3 style="font-size:15px;margin-top:8px">Tài khoản trong hệ thống</h3>
+      ${me.role === 'admin' ? `<h3 style="font-size:15px;margin-top:8px">Quyền xem của khách (không đăng nhập)</h3>
+        <div class="stack" style="gap:8px">
+          <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="gp-view" ${S.settings.guestView !== false ? 'checked' : ''}><span>Cho phép khách mở ứng dụng để xem tham khảo (lớp học, giáo trình, tài liệu)</span></label>
+          <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="gp-exams" ${S.settings.guestExams !== false ? 'checked' : ''}><span>Khách xem được các đề <b>đã duyệt</b> trong Kho đề (không kèm đáp án)</span></label>
+          <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="gp-ans" ${S.settings.guestAnswers === true ? 'checked' : ''}><span>Khách xem được cả <b>đáp án</b> và <b>ngân hàng câu hỏi</b> (không nên bật nếu học sinh có thể vào xem)</span></label>
+          <div class="hint">Khách không bao giờ xuất được tệp Word, không soạn hay sửa được gì. Đề chưa duyệt luôn bị ẩn với khách.</div>
+          <div><button class="btn sm primary" type="button" id="gp-save">Lưu quyền xem của khách</button></div>
+        </div>
+        <h3 style="font-size:15px;margin-top:8px">Tài khoản trong hệ thống</h3>
         <div id="ulist"><div class="empty">Đang tải…</div></div>
         <form id="nu-form" class="stack" style="border-top:1px solid var(--line);padding-top:12px">
           <b style="font-size:13.5px">Thêm tài khoản</b>
@@ -70,6 +94,8 @@
       } catch (err) { toast(err.message); }
     };
     if (me.role !== 'admin') return;
+    document.getElementById('gp-save').onclick = () => safeWrite(() => S.db.doc('settings/general').set({ ...S.settings,
+      guestView: document.getElementById('gp-view').checked, guestExams: document.getElementById('gp-exams').checked, guestAnswers: document.getElementById('gp-ans').checked }), 'Đã lưu quyền xem của khách.');
     loadUsers();
     document.getElementById('nu-form').onsubmit = async (e) => {
       e.preventDefault();

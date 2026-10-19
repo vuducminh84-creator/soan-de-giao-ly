@@ -511,6 +511,7 @@ function blocksToDocx(ex,view){
   return {xml:out.join(''),code};
 }
 async function exportWord(ex,which){
+  if(S.me?.role==='guest'){window.__showLogin?.('Vui lòng đăng nhập để xuất tệp Word.');return;}
   if(!S.downloads){toast('Không thể tải tệp trong chế độ xem này.');return;}
   try{await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');}catch{toast('Không tải được bộ tạo tệp Word. Kiểm tra kết nối mạng.');return;}
   let body='';let code;DOCPR=1;
@@ -622,7 +623,7 @@ function renderBanner(){let h='';
   else if(S.connected&&S.canWrite===false)h=`<div class="banner info">Tài khoản của bạn chỉ có quyền xem. Muốn tạo lớp và soạn đề, hãy nhờ quản trị đổi vai trò thành <b>Giáo lý viên</b>.</div>`;
   if(S.errors)h+=`<div class="banner">${esc(S.errors)}</div>`;$('#banner').innerHTML=h;}
 function renderWho(){const m=S.me;if(!m){$('#who').innerHTML='';return;}
-  $('#who').innerHTML=`<img src="${esc(m.avatarUrl)}" alt=""><span>${esc(m.name||'Bạn')} · ${S.isAdmin?'Quản trị / BGH':'Giáo lý viên'}</span>`;}
+  $('#who').innerHTML=`<img src="${esc(m.avatarUrl)}" alt=""><span>${esc(m.name||'Bạn')} · ${m.role==='guest'?'Khách – chỉ xem':m.role==='viewer'?'Chỉ xem':S.isAdmin?'Quản trị / BGH':'Giáo lý viên'}</span>`;}
 
 /* ================= Kho đề ================= */
 function renderKho(){
@@ -688,7 +689,7 @@ function renderDetail(v,ex){
         <label class="f">Ghi chú (không bắt buộc)<textarea id="ap-note" rows="2" placeholder="Ví dụ: Câu 7 cần sửa phương án C"></textarea></label>
         <div class="row"><button class="btn ok" data-act="approve">Duyệt đề</button><button class="btn" data-act="return">Trả về để sửa</button></div></div>`}</div>`:''}
     </div>
-    <div class="desk"><div class="desk-bar"><div class="seg" role="group"><button data-act="view" data-v="de" aria-pressed="${S.detailView==='de'}">Đề thi</button><button data-act="view" data-v="da" aria-pressed="${S.detailView==='da'}">Đáp án &amp; cách chấm</button></div><span class="small muted">Khổ A4 · Times New Roman 13</span></div>
+    <div class="desk"><div class="desk-bar"><div class="seg" role="group"><button data-act="view" data-v="de" aria-pressed="${S.detailView==='de'}">Đề thi</button>${ex.answersHidden?'':`<button data-act="view" data-v="da" aria-pressed="${S.detailView==='da'}">Đáp án &amp; cách chấm</button>`}</div><span class="small muted">Khổ A4 · Times New Roman 13</span></div>
       <div class="paper-fit">${paperHTML(ex,S.detailView)}</div></div>
   </div>`;
   fitPapers(v);
@@ -1148,6 +1149,7 @@ async function importQuestionFile(file){
     S.bankImport={fileName:file.name,title:file.name.replace(/\.[^.]+$/,''),...r};renderBank();}
   catch(e){if(st)st.textContent='';toast(file.name+': '+(e.message==='load'?'không tải được bộ đọc tệp, kiểm tra mạng.':e.message));}}
 async function downloadTemplate(kind){
+  if(S.me?.role==='guest'){window.__showLogin?.('Vui lòng đăng nhập để tải tệp.');return;}
   if(!S.downloads){toast('Không tải được tệp trong chế độ xem này.');return;}
   try{if(kind==='txt'){await S.downloads.save({filename:'Mau_ngan_hang_cau_hoi.txt',data:SAMPLE_TXT});return;}
     await loadScript(SHEETJS_URL);

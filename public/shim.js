@@ -8,9 +8,10 @@
     return body;
   };
   window.__api = api;
-  let ME = null, CLAUDE_ON = false, authResolve;
+  let ME = null, CLAUDE_ON = false, GUEST = null, authResolve;
   const authReady = new Promise((r) => (authResolve = r));
   window.__me = () => ME;
+  window.__guest = () => GUEST;
 
   /* ---------- đăng nhập ---------- */
   const authEl = () => document.getElementById('auth');
@@ -26,7 +27,10 @@
       <div class="auth-err" id="au-err">${msg ? msg : ''}</div>
       <button class="btn primary" type="submit">${setup ? 'Tạo tài khoản quản trị' : 'Đăng nhập'}</button>
       ${setup ? '' : '<p class="auth-note">Quên mật khẩu? Liên hệ quản trị để được đặt lại.</p>'}
+      ${GUEST && !setup ? '<button type="button" class="btn ghost" id="au-close">Tiếp tục xem với tư cách khách</button>' : ''}
     </form>`;
+    const cl = document.getElementById('au-close');
+    if (cl) cl.onclick = () => { el.hidden = true; el.innerHTML = ''; };
     document.getElementById('auth-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('button'); btn.disabled = true;
@@ -34,7 +38,7 @@
       if (setup) body.name = document.getElementById('au-name').value.trim();
       try {
         await api(setup ? '/setup' : '/login', { method: 'POST', body: JSON.stringify(body) });
-        await check();
+        location.reload();
       } catch (err) { document.getElementById('au-err').textContent = err.message; btn.disabled = false; }
     });
     (document.getElementById(setup ? 'au-name' : 'au-user')).focus();
@@ -46,10 +50,16 @@
       authEl().hidden = true; authEl().innerHTML = '';
       authResolve();
     } catch (e) {
-      if (e.status === 401) showLogin(!!(e.body && e.body.needsSetup));
+      const b = e.body || {};
+      if (e.status === 401 && !b.needsSetup && b.guest && b.guest.on) {
+        GUEST = b.guest; ME = { id: null, name: 'Khách', username: '', role: 'guest' };
+        authEl().hidden = true; authEl().innerHTML = ''; authResolve(); return;
+      }
+      if (e.status === 401) showLogin(!!b.needsSetup);
       else showLogin(false, 'Không kết nối được máy chủ: ' + e.message);
     }
   }
+  window.__showLogin = (msg) => showLogin(false, msg || '');
   window.__logout = async () => { try { await api('/logout', { method: 'POST', body: '{}' }); } catch {} location.reload(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', check); else check();
 
@@ -147,12 +157,12 @@
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
   const user = {
-    async me() { return { id: ME.id, name: ME.name, avatarUrl: avatar(ME.name), color: '#0B63B6', email: null, isOwner: ME.role === 'admin', canEdit: ME.role === 'admin', role: ME.role }; },
+    async me() { return { id: ME.id, name: ME.name, role: ME.role, avatarUrl: avatar(ME.name), color: '#0B63B6', email: null, isOwner: ME.role === 'admin', canEdit: ME.role === 'admin', role: ME.role }; },
     async id() { return ME.id; },
     async name() { return ME.name; },
     async isOwner() { return ME.role === 'admin'; },
     async canEdit() { return ME.role === 'admin'; },
-    async can(n) { return n === 'data.write' ? ME.role !== 'viewer' : false; },
+    async can(n) { return n === 'data.write' ? (ME.role !== 'viewer' && ME.role !== 'guest') : false; },
     async profiles(ids) { return Object.fromEntries([].concat(ids).map((id) => [id, { id, name: '', avatarUrl: avatar('?'), color: '#888', email: null, isMe: id === ME.id, guest: false }])); },
     async search() { return []; },
   };
@@ -213,7 +223,8 @@
   window.claude = {
     async use(name) {
       await authReady;
-      if (name === 'sample') return CLAUDE_ON && ME.role !== 'viewer' ? sample : null;
+      if (name === 'sample') return CLAUDE_ON && ME.role !== 'viewer' && ME.role !== 'guest' ? sample : null;
+      if (name === 'downloads' && ME.role === 'guest') return null;
       return { db, user, downloads }[name] || null;
     },
   };
