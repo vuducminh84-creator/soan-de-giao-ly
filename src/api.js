@@ -109,7 +109,7 @@ export async function onRequest(ctx) {
       const u = await currentUser(env, req);
       if (u) return json({ user: pub(u), claude: !!env.ANTHROPIC_API_KEY });
       const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
-      return json({ needsSetup: c.n === 0 }, 401);
+      return json({ needsSetup: c.n === 0, guest: c.n === 0 ? null : await guestPolicy(env) }, 401);
     }
     if (route === '/setup' && m === 'POST') {
       const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
@@ -139,7 +139,44 @@ export async function onRequest(ctx) {
     }
 
     const u = await currentUser(env, req);
-    if (!u) return fail(401, 'Phiên đăng nhập đã hết. Hãy đăng nhập lại.');
+    if (!u) {
+      // Khách (không đăng nhập): chỉ đọc, theo chính sách trong Cài đặt
+      const pol = await guestPolicy(env);
+      if (pol.on && route === '/versions' && m === 'POST') {
+        const b = await readBody(req);
+        const colls = (Array.isArray(b?.colls) ? b.colls : []).filter((c) => splitPath(c, false)).slice(0, 30);
+        const versions = Object.fromEntries(colls.map((c) => [c, '0:0']));
+        const ok = colls.filter((c) => guestColl(c, pol));
+        if (ok.length) {
+          const r = await env.DB.prepare(`SELECT coll, COUNT(*) AS n, MAX(updated) AS u FROM docs WHERE coll IN (${ok.map(() => '?').join(',')}) GROUP BY coll`).bind(...ok).all();
+          for (const row of r.results) versions[row.coll] = row.n + ':' + row.u;
+          if (ok.includes('exams')) { const a = await env.DB.prepare("SELECT COUNT(*) AS n, MAX(updated) AS u FROM docs WHERE coll='approvals'").first(); versions.exams += '|' + a.n + ':' + a.u; }
+        }
+        return json({ versions });
+      }
+      if (pol.on && route === '/docs' && m === 'GET') {
+        const p = splitPath(url.searchParams.get('coll'), false);
+        if (!p) return fail(400, 'Đường dẫn không hợp lệ.');
+        if (!guestColl(p.coll, pol)) return json({ docs: [], version: '0:0' });
+        const r = await env.DB.prepare('SELECT id, data FROM docs WHERE coll = ? ORDER BY updated DESC LIMIT 1000').bind(p.coll).all();
+        let docs = r.results.map((x) => ({ id: x.id, data: JSON.parse(x.data) }));
+        if (p.coll === 'exams') {
+          const ap = await approvedMap(env);
+          docs = docs.filter((d) => ap[d.id] === d.data.version).map((d) => ({ id: d.id, data: pol.answers ? d.data : stripAnswers(d.data) }));
+        }
+        return json({ docs, version: 'guest' });
+      }
+      if (pol.on && route === '/doc' && m === 'GET') {
+        const p = splitPath(url.searchParams.get('path'), true);
+        if (!p) return fail(400, 'Đường dẫn không hợp lệ.');
+        if (!guestColl(p.coll, pol)) return json({ data: null });
+        const row = await env.DB.prepare('SELECT data FROM docs WHERE coll = ? AND id = ?').bind(p.coll, p.id).first();
+        let data = row ? JSON.parse(row.data) : null;
+        if (data && p.coll === 'exams') { const ap = await approvedMap(env); data = ap[p.id] === data.version ? (pol.answers ? data : stripAnswers(data)) : null; }
+        return json({ data });
+      }
+      return fail(401, 'Vui lòng đăng nhập để thực hiện thao tác này.');
+    }
 
     if (route === '/password' && m === 'POST') {
       const b = await readBody(req);
@@ -282,6 +319,30 @@ export async function onRequest(ctx) {
   } catch (e) {
     return fail(500, 'Lỗi máy chủ: ' + (e?.message || e));
   }
+}
+
+/* ---------- chế độ khách ---------- */
+async function guestPolicy(env) {
+  const r = await env.DB.prepare("SELECT data FROM docs WHERE coll = 'settings' AND id = 'general'").first();
+  const s = r ? JSON.parse(r.data) : {};
+  return { on: s.guestView !== false, exams: s.guestExams !== false, answers: s.guestAnswers === true };
+}
+function guestColl(coll, pol) {
+  if (!pol.on) return false;
+  if (['classes', 'materials', 'settings', 'approvals'].includes(coll)) return true;
+  if (/^materials\/[^/]+\/chunks$/.test(coll)) return true;
+  if (coll === 'exams') return pol.exams;
+  if (coll === 'bank') return pol.answers;
+  return false;
+}
+async function approvedMap(env) {
+  const r = await env.DB.prepare("SELECT id, data FROM docs WHERE coll = 'approvals'").all();
+  const m = {};
+  for (const x of r.results) { const d = JSON.parse(x.data); if (d.status === 'approved') m[x.id] = d.version; }
+  return m;
+}
+function stripAnswers(d) {
+  return { ...d, gradingNotes: [], answersHidden: true, questions: (d.questions || []).map((q) => { const c = { ...q }; delete c.answer; delete c.explain; delete c.rubric; return c; }) };
 }
 
 function validateUser(b, needPass) {
