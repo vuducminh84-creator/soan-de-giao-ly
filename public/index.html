@@ -169,6 +169,18 @@ details.menu .pop button:hover{background:var(--surface-2)}
 .matlist{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)}
 .matlist label{display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer}
 .matlist input{margin-top:3px;accent-color:var(--accent)}
+.reader{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+.rd-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;background:var(--bar);color:var(--bar-fg);border-bottom:3px solid var(--accent)}
+.rd-bar .rd-title{font-family:var(--f-display);font-size:16px;font-weight:600;min-width:0;flex:1 1 220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd-bar input{width:auto;flex:0 1 220px;padding:6px 10px;background:var(--surface);color:var(--fg)}
+.rd-bar .btn{background:transparent;color:var(--bar-fg);border-color:var(--bar-muted)}
+.rd-bar .btn:hover{border-color:var(--bar-fg)}
+.rd-bar .rd-info{font-size:12.5px;color:var(--bar-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rd-body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+.rd-body article{max-width:74ch;margin:0 auto;padding:28px 16px calc(80px + env(safe-area-inset-bottom,0px));white-space:pre-wrap;font-family:var(--f-paper);font-size:16.5px;line-height:1.7;color:var(--fg);overflow-wrap:anywhere}
+.rd-body mark{background:#FFE58A;color:#111;border-radius:2px}
+.rd-body mark.cur{background:#FFB020;outline:2px solid #FFB020}
+.rd-foot{display:flex;justify-content:center;gap:10px;align-items:center;padding:0 16px 40px}
 .bq{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 14px;border-top:1px solid var(--line);font-size:13px}
 .bq .ans{color:var(--ok);font-size:12px;margin-top:2px}
 .bkstat{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
@@ -1216,6 +1228,55 @@ function wireBankDrop(){const d=$('#bk-drop');if(!d)return;d.onclick=()=>$('#bkf
   d.ondragover=e=>{e.preventDefault();d.classList.add('over');};d.ondragleave=()=>d.classList.remove('over');
   d.ondrop=e=>{e.preventDefault();d.classList.remove('over');importQuestionFile(e.dataTransfer.files[0]);};}
 
+/* ================= Trình đọc tài liệu (toàn văn) ================= */
+const READ_PAGE=12000;let RD=null;
+function splitPages(t){const out=[];let i=0;while(i<t.length){let j=Math.min(t.length,i+READ_PAGE);
+  if(j<t.length){const k=t.lastIndexOf('\n',j);if(k>i+READ_PAGE*0.6)j=k+1;}out.push(t.slice(i,j));i=j;}return out.length?out:[''];}
+const foldTxt=t=>noMark(t).toLowerCase();
+async function openReader(id){const m=S.materials.find(x=>x.id===id);if(!m)return;
+  RD={id,title:m.title,pages:['Đang tải nội dung…'],p:0,q:'',hits:[],h:-1,len:0};ensureReader();drawReader();
+  try{const t=(await materialText(id)).normalize('NFC');RD.pages=splitPages(t);RD.len=t.length;}catch{RD.pages=['(Không đọc được nội dung tài liệu này.)'];}
+  drawReader();}
+function ensureReader(){if($('#reader'))return;const el=document.createElement('div');el.id='reader';el.className='reader';el.hidden=true;
+  el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Đọc tài liệu');
+  el.innerHTML=`<div class="rd-bar"><span class="rd-title" id="rd-title"></span>
+    <input type="search" id="rd-q" placeholder="Tìm trong tài liệu" aria-label="Tìm trong tài liệu"><button class="btn sm" data-r="find">Tìm</button><span class="rd-info" id="rd-hit"></span>
+    <button class="btn sm" data-r="prev" aria-label="Trang trước">‹</button><span class="rd-info" id="rd-page"></span><button class="btn sm" data-r="next" aria-label="Trang sau">›</button>
+    <button class="btn sm" data-r="txt" id="rd-txt">Tải .txt</button><button class="btn sm" data-r="close">Đóng ✕</button></div>
+    <div class="rd-body" id="rd-body"><article id="rd-text"></article><div class="rd-foot"><button class="btn" data-r="prev">‹ Trang trước</button><span class="small muted" id="rd-page2"></span><button class="btn" data-r="next">Trang sau ›</button></div></div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(!b||!RD)return;const r=b.dataset.r;
+    if(r==='close'){RD=null;drawReader();}
+    if(r==='prev'&&RD.p>0){RD.p--;drawReader(true);}
+    if(r==='next'&&RD.p<RD.pages.length-1){RD.p++;drawReader(true);}
+    if(r==='find')readerFind();
+    if(r==='txt')readerDownload();});
+  el.querySelector('#rd-q').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();readerFind();}});
+  document.addEventListener('keydown',e=>{if(!RD)return;if(e.key==='Escape'){RD=null;drawReader();}
+    if(e.target.id!=='rd-q'&&e.key==='ArrowRight'&&RD.p<RD.pages.length-1){RD.p++;drawReader(true);}
+    if(e.target.id!=='rd-q'&&e.key==='ArrowLeft'&&RD.p>0){RD.p--;drawReader(true);}});}
+function readerFind(){const q=$('#rd-q').value.trim();if(!q){RD.q='';RD.hits=[];RD.h=-1;drawReader();return;}
+  if(q!==RD.q){RD.q=q;RD.hits=[];const fq=foldTxt(q);RD.pages.forEach((pg,pi)=>{const f=foldTxt(pg);let i=f.indexOf(fq);while(i>=0){RD.hits.push({p:pi,i});i=f.indexOf(fq,i+fq.length);}});RD.h=-1;}
+  if(!RD.hits.length){drawReader();return;}
+  RD.h=(RD.h+1)%RD.hits.length;RD.p=RD.hits[RD.h].p;drawReader();
+  const cur=document.querySelector('#rd-text mark.cur');if(cur)cur.scrollIntoView({block:'center'});}
+function drawReader(top){const el=$('#reader');if(!el)return;
+  if(!RD){el.hidden=true;document.body.style.overflow='';return;}
+  el.hidden=false;document.body.style.overflow='hidden';
+  const pg=RD.pages[RD.p]||'';let html='';
+  if(RD.q){const fq=foldTxt(RD.q),f=foldTxt(pg);let last=0,i=f.indexOf(fq);const curI=RD.h>=0&&RD.hits[RD.h].p===RD.p?RD.hits[RD.h].i:-1;
+    while(i>=0&&fq){html+=esc(pg.slice(last,i))+`<mark${i===curI?' class="cur"':''}>`+esc(pg.slice(i,i+fq.length))+'</mark>';last=i+fq.length;i=f.indexOf(fq,last);}html+=esc(pg.slice(last));}
+  else html=esc(pg);
+  $('#rd-title').textContent=RD.title;$('#rd-text').innerHTML=html;
+  const pinfo=`Trang ${RD.p+1}/${RD.pages.length}`;$('#rd-page').textContent=pinfo;$('#rd-page2').textContent=pinfo+(RD.len?` · ${RD.len.toLocaleString('vi-VN')} ký tự`:'');
+  $('#rd-hit').textContent=RD.q?(RD.hits.length?`${RD.h+1}/${RD.hits.length} kết quả`:'Không tìm thấy'):'';
+  el.querySelectorAll('[data-r=prev]').forEach(b=>b.disabled=RD.p===0);el.querySelectorAll('[data-r=next]').forEach(b=>b.disabled=RD.p>=RD.pages.length-1);
+  $('#rd-txt').hidden=!S.downloads||S.me?.role==='guest';
+  if(top)$('#rd-body').scrollTop=0;}
+async function readerDownload(){if(!RD||!S.downloads)return;
+  try{await S.downloads.save({filename:(RD.title||'tai-lieu').replace(/[\\/:*?"<>|]+/g,'-')+'.txt',data:RD.pages.join('')});}
+  catch(e){if(e?.code!=='declined')toast('Không tải được tệp ('+(e?.code||'lỗi')+').');}}
+
 /* ================= Lớp học ================= */
 function renderLop(){
   const v=$('#v-lop');const ed=S.editClass;
@@ -1261,8 +1322,8 @@ function renderGT(){
     <div class="drop" id="drop" tabindex="0" role="button"><b>${isShared?'Chọn hoặc kéo thả tài liệu tham khảo':'Chọn hoặc kéo thả tệp giáo trình'}</b><span class="small muted">Word (.docx), PDF có chữ, .txt, .md · có thể chọn nhiều tệp</span><div id="upstat" class="small" style="margin-top:8px"></div></div>
     <div class="panel"><h2 style="font-size:15px">Hoặc dán nội dung</h2><div class="stack"><input type="text" id="gt-title" placeholder="${isShared?'Tên tài liệu, ví dụ: Giáo lý Hội Thánh Công giáo – Phần Bí tích':'Tên tài liệu, ví dụ: Bài 5 – Bí tích Thêm Sức'}"><textarea id="gt-text" rows="4" placeholder="Dán nội dung bài học vào đây"></textarea><div><button class="btn" data-a="paste">Lưu nội dung</button></div></div></div></div>`:''}
   ${mats.length?`<div class="exlist">${mats.map(m=>`<div><div class="mrow"><div style="min-width:0"><div style="font-weight:600">${esc(m.title)}</div><div class="small muted">${esc(m.fileName||'Nội dung dán')} · ${(m.chars||0).toLocaleString('vi-VN')} ký tự · ${dmy(m.createdAt)}</div></div>
-    <div class="row" style="gap:6px"><button class="btn sm" data-a="viewmat" data-id="${m.id}">${S.openMat===m.id?'Ẩn':'Xem'}</button>${writable()?`<button class="btn sm ghost danger" data-a="delmat" data-id="${m.id}">Xoá</button>`:''}</div></div>
-    ${S.openMat===m.id?`<pre class="mtext">${S.matText[m.id]!=null?esc(S.matText[m.id].slice(0,8000))+(S.matText[m.id].length>8000?'\n\n… (còn tiếp)':''):'Đang tải…'}</pre>`:''}</div>`).join('')}</div>`
+    <div class="row" style="gap:6px"><button class="btn sm" data-a="viewmat" data-id="${m.id}">Đọc toàn văn</button>${writable()?`<button class="btn sm ghost danger" data-a="delmat" data-id="${m.id}">Xoá</button>`:''}</div></div>
+    </div>`).join('')}</div>`
     :`<div class="empty"><h3>${isShared?'Chưa có tài liệu tham khảo':'Lớp này chưa có giáo trình'}</h3><p>${isShared?'Tải lên tài liệu dùng chung (Giáo lý Hội Thánh Công giáo tóm lược, Kinh Thánh, tài liệu của Giáo phận…). Khi soạn đề, mọi lớp đều chọn được.':'Tải tệp bài học lên để Claude soạn câu hỏi bám sát nội dung lớp.'}</p></div>`}`}`;
   const drop=$('#drop');if(drop){drop.onclick=()=>$('#filepick').click();drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#filepick').click();}};
     drop.ondragover=e=>{e.preventDefault();drop.classList.add('over');};drop.ondragleave=()=>drop.classList.remove('over');
@@ -1273,7 +1334,7 @@ $('#v-gt').addEventListener('change',e=>{if(e.target.id==='gt-cls'){S.matClass=e
 const gtClick=async e=>{const t=e.target.closest('[data-a]');if(!t)return;const a=t.dataset.a,id=t.dataset.id;
   if(a==='paste'){const title=$('#gt-title').value.trim(),text=$('#gt-text').value.trim();if(!title||!text){toast('Nhập tên tài liệu và nội dung.');return;}
     if(await saveMaterial(title,'',text)){$('#gt-title').value='';$('#gt-text').value='';}}
-  if(a==='viewmat'){if(S.openMat===id){S.openMat=null;renderGT();return;}S.openMat=id;renderGT();try{await materialText(id);}catch{S.matText[id]='(Không đọc được nội dung)';}renderGT();}
+  if(a==='viewmat')openReader(id);
   if(a==='delmat'){if(t.dataset.confirm!=='1'){t.dataset.confirm='1';t.textContent='Bấm lần nữa';setTimeout(()=>{if(t.isConnected){t.dataset.confirm='';t.textContent='Xoá';}},4000);return;}
     const m=S.materials.find(x=>x.id===id);await safeWrite(async()=>{for(let i=0;i<(m?.chunks||0);i++)await S.db.doc(`materials/${id}/chunks/c${i}`).delete();await S.db.doc('materials/'+id).delete();},'Đã xoá giáo trình.');}
 };
