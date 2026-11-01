@@ -169,6 +169,7 @@ details.menu .pop button:hover{background:var(--surface-2)}
 .matlist{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)}
 .matlist label{display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer}
 .matlist input{margin-top:3px;accent-color:var(--accent)}
+@media print{body.guest>*{display:none!important}body.guest::before{content:"Vui lòng đăng nhập để in đề.";display:block;padding:40px;font:16px sans-serif}}
 .reader{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
 .rd-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;background:var(--bar);color:var(--bar-fg);border-bottom:3px solid var(--accent)}
 .rd-bar .rd-title{font-family:var(--f-display);font-size:16px;font-weight:600;min-width:0;flex:1 1 220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -724,7 +725,7 @@ function renderCompose(){
     </div>
     <div class="pane-preview"><div class="desk"><div class="desk-bar"><div class="seg" role="group"><button data-pv="de" aria-pressed="${S.paperView==='de'}">Đề thi</button><button data-pv="da" aria-pressed="${S.paperView==='da'}">Đáp án &amp; cách chấm</button></div><span class="small muted">Xem trước khổ A4</span></div><div class="paper-fit" id="cpaper"></div></div></div>
   </div>
-  <div class="actionbar"><span class="small muted" id="savestate">${d.id?'Đã lưu · bản '+d.version:'Chưa lưu'}</span><span class="sp"></span>
+  <div class="actionbar">${S.me?.role==='guest'?'<span class="small" style="color:var(--warn);font-weight:600">Chế độ thử: không lưu, không xuất Word, không in.</span>':''}<span class="small muted" id="savestate">${d.id?'Đã lưu · bản '+d.version:'Chưa lưu'}</span><span class="sp"></span>
     ${d.id?'<button class="btn ghost" data-a="newdraft">Đề mới</button>':''}
     <details class="menu"><summary class="btn">Xuất Word ▾</summary><div class="pop"><button data-a="word" data-w="de">Đề thi</button><button data-a="word" data-w="da">Đáp án &amp; hướng dẫn chấm</button><button data-a="word" data-w="both">Đề + đáp án</button></div></details>
     <button class="btn" data-a="save" ${writable()?'':'disabled'}>Lưu</button><button class="btn primary" data-a="savesubmit" ${writable()?'':'disabled'}>Lưu &amp; gửi duyệt</button></div>`;

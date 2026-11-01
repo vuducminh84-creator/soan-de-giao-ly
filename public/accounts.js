@@ -21,7 +21,8 @@
     // khách: ẩn các tab chỉ dành cho người biên tập
     const g = window.__guest && window.__guest();
     if (me.role === 'guest') {
-      const hide = ['kho', 'soan', 'nh', 'cd'];
+      const hide = ['kho', 'cd'].concat(g && g.bank ? [] : ['soan', 'nh']);
+      document.body.classList.add('guest');
       document.querySelectorAll('#tabs [data-tab]').forEach((t) => { t.hidden = hide.includes(t.dataset.tab); });
       if (hide.includes(S.tab)) setTab('tl');
     }
@@ -31,7 +32,8 @@
   renderBanner = function () {
     const me = window.__me && window.__me();
     if (!me || me.role !== 'guest') return _renderBanner();
-    document.getElementById('banner').innerHTML = `<div class="banner info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span>Bạn đang xem với tư cách <b>khách</b>: chỉ xem lớp học, giáo trình và tài liệu tham khảo. Đăng nhập để xem kho đề, soạn đề và xuất tệp Word.</span><button class="btn sm primary" type="button" onclick="window.__showLogin()">Đăng nhập</button></div>`;
+    const g = window.__guest && window.__guest();
+    document.getElementById('banner').innerHTML = `<div class="banner info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span>Bạn đang dùng với tư cách <b>khách</b>: được xem tài liệu${g && g.bank ? ', ngân hàng câu hỏi và thử soạn đề' : ''}, nhưng không lưu, không xuất Word và không in được. Đăng nhập để dùng đầy đủ.</span><button class="btn sm primary" type="button" onclick="window.__showLogin()">Đăng nhập</button></div>`;
   };
 
   const _renderCD = renderCD;
@@ -69,7 +71,8 @@
       ${me.role === 'admin' ? `<h3 style="font-size:15px;margin-top:8px">Quyền xem của khách (không đăng nhập)</h3>
         <div class="stack" style="gap:8px">
           <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="gp-view" ${S.settings.guestView !== false ? 'checked' : ''}><span>Cho phép khách mở ứng dụng để xem tham khảo (lớp học, giáo trình, tài liệu)</span></label>
-          <div class="hint">Khách chỉ xem được Lớp học, Giáo trình và Tài liệu. Kho đề, đáp án và ngân hàng câu hỏi luôn bị ẩn với khách. Khách không xuất được tệp Word, không soạn hay sửa được gì.</div>
+          <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="gp-bank" ${S.settings.guestBank !== false ? 'checked' : ''}><span>Cho khách <b>vào thử Soạn đề</b> và <b>xem Ngân hàng câu hỏi</b> (khách không lưu được, không xuất Word, không in được)</span></label>
+          <div class="hint">Kho đề (đề của giáo lý viên) luôn bị ẩn với khách. Khách thử soạn đề được nhưng không lưu, không xuất Word, không in; không sửa được dữ liệu nào.</div>
           <div><button class="btn sm primary" type="button" id="gp-save">Lưu quyền xem của khách</button></div>
         </div>
         <h3 style="font-size:15px;margin-top:8px">Tài khoản trong hệ thống</h3>
@@ -93,7 +96,7 @@
     };
     if (me.role !== 'admin') return;
     document.getElementById('gp-save').onclick = () => safeWrite(() => S.db.doc('settings/general').set({ ...S.settings,
-      guestView: document.getElementById('gp-view').checked, guestExams: false, guestAnswers: false }), 'Đã lưu quyền xem của khách.');
+      guestView: document.getElementById('gp-view').checked, guestBank: document.getElementById('gp-bank').checked, guestExams: false, guestAnswers: false }), 'Đã lưu quyền xem của khách.');
     loadUsers();
     document.getElementById('nu-form').onsubmit = async (e) => {
       e.preventDefault();
