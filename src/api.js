@@ -325,14 +325,13 @@ export async function onRequest(ctx) {
 async function guestPolicy(env) {
   const r = await env.DB.prepare("SELECT data FROM docs WHERE coll = 'settings' AND id = 'general'").first();
   const s = r ? JSON.parse(r.data) : {};
-  return { on: s.guestView !== false, exams: s.guestExams !== false, answers: s.guestAnswers === true };
+  // Khách chỉ xem lớp học, giáo trình, tài liệu. Đề thi, đáp án, ngân hàng câu hỏi luôn bị chặn.
+  return { on: s.guestView !== false, exams: false, answers: false };
 }
 function guestColl(coll, pol) {
   if (!pol.on) return false;
-  if (['classes', 'materials', 'settings', 'approvals'].includes(coll)) return true;
+  if (['classes', 'materials', 'settings'].includes(coll)) return true;
   if (/^materials\/[^/]+\/chunks$/.test(coll)) return true;
-  if (coll === 'exams') return pol.exams;
-  if (coll === 'bank') return pol.answers;
   return false;
 }
 async function approvedMap(env) {
