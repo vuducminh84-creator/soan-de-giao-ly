@@ -264,14 +264,17 @@ export async function onRequest(ctx) {
       sql += ' LIMIT ?';
       const r = await env.DB.prepare(sql).bind(p.coll, limit).all();
       const v = await env.DB.prepare('SELECT COUNT(*) AS n, MAX(updated) AS u FROM docs WHERE coll = ?').bind(p.coll).first();
-      return json({ docs: r.results.map((x) => ({ id: x.id, data: JSON.parse(x.data) })), version: (v.n || 0) + ':' + (v.u || 0) });
+      let docs = r.results.map((x) => ({ id: x.id, data: JSON.parse(x.data) }));
+      // Giáo lý viên chỉ thấy đề do chính mình soạn; quản trị thấy toàn bộ
+      if (p.coll === 'exams' && u.role !== 'admin') docs = docs.filter((d) => d.data.creatorId === u.id);
+      return json({ docs, version: (v.n || 0) + ':' + (v.u || 0) });
     }
     if (route === '/doc') {
       const p = splitPath(url.searchParams.get('path'), true);
       if (!p) return fail(400, 'Đường dẫn không hợp lệ.');
       const row = await env.DB.prepare('SELECT data FROM docs WHERE coll = ? AND id = ?').bind(p.coll, p.id).first();
       const existing = row ? JSON.parse(row.data) : null;
-      if (m === 'GET') return json({ data: existing });
+      if (m === 'GET') return json({ data: p.coll === 'exams' && u.role !== 'admin' && existing && existing.creatorId !== u.id ? null : existing });
       if (!canWrite(u, p.coll, existing)) return fail(403, 'Bạn không có quyền thực hiện thao tác này.');
       const now = Date.now();
       if (m === 'DELETE') {
