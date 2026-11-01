@@ -642,19 +642,20 @@ function renderKho(){
   const v=$('#v-kho');
   if(S.openExam){const ex=S.exams.find(e=>e.id===S.openExam);if(ex)return renderDetail(v,ex);S.openExam=null;}
   const f=S.filters;
-  let list=S.exams.filter(e=>(!f.cls||e.classId===f.cls)&&(!f.st||statusOf(e)===f.st)&&(!f.q||noMark((e.title||'')+' '+(e.code||'')+' '+(e.authorName||'')).toLowerCase().includes(noMark(f.q).toLowerCase())));
-  const pend=S.exams.filter(e=>statusOf(e)==='pending').length,appr=S.exams.filter(e=>statusOf(e)==='approved').length;
+  const visible=S.isAdmin?S.exams:S.exams.filter(e=>e.creatorId===S.uid);
+  let list=visible.filter(e=>(!f.cls||e.classId===f.cls)&&(!f.st||statusOf(e)===f.st)&&(!f.q||noMark((e.title||'')+' '+(e.code||'')+' '+(e.authorName||'')).toLowerCase().includes(noMark(f.q).toLowerCase())));
+  const pend=visible.filter(e=>statusOf(e)==='pending').length,appr=visible.filter(e=>statusOf(e)==='approved').length;
   const settingsHint=S.connected&&S.ready.settings&&S.settings.parish===DEFAULT_SETTINGS.parish&&S.isAdmin?`<div class="banner info">Vào <b>Cài đặt</b> để điền tên Giáo phận, Giáo xứ in trên đầu đề thi.</div>`:'';
-  v.innerHTML=`${settingsHint}<div class="page-head"><div><h1>Kho đề thi</h1><p>Mọi đề đã lưu. Quản trị và giáo lý viên chủ nhiệm mở lại để xem, xuất Word và duyệt.</p></div>
+  v.innerHTML=`${settingsHint}<div class="page-head"><div><h1>Kho đề thi</h1><p>${S.isAdmin?'Toàn bộ đề của các giáo lý viên. Quản trị mở lại để xem, xuất Word và ký duyệt.':'Các đề do bạn soạn. Đề của giáo lý viên khác chỉ quản trị xem được.'}</p></div>
     ${writable()?'<button class="btn primary" data-act="new">+ Soạn đề mới</button>':''}</div>
-    <div class="stats"><span><b>${S.exams.length}</b> đề</span><span><b>${pend}</b> chờ duyệt</span><span><b>${appr}</b> đã duyệt</span><span><b>${S.classes.length}</b> lớp</span></div>
+    <div class="stats"><span><b>${visible.length}</b> đề</span><span><b>${pend}</b> chờ duyệt</span><span><b>${appr}</b> đã duyệt</span><span><b>${S.classes.length}</b> lớp</span></div>
     <div class="filters"><select id="f-cls" aria-label="Lọc theo lớp"><option value="">Tất cả lớp</option>${S.classes.map(c=>`<option value="${c.id}" ${f.cls===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
       <select id="f-st" aria-label="Lọc theo trạng thái"><option value="">Mọi trạng thái</option>${Object.entries(STATUS).map(([k,l])=>`<option value="${k}" ${f.st===k?'selected':''}>${l}</option>`).join('')}</select>
       <input type="text" id="f-q" placeholder="Tìm theo tên đề, mã đề, người ra đề" value="${esc(f.q)}"></div>
     ${!S.ready.exams&&S.connected?'<div class="empty">Đang tải kho đề…</div>':list.length?`<div class="exlist">${list.map(e=>{const st=statusOf(e);const c=clsOf(e.classId);
       return `<button class="exrow" data-open="${e.id}"><div><div class="t">${esc(e.title||'(Chưa đặt tên)')}</div><div class="m">${esc(c?.name||e.className||'')} · ${esc(TYPES[e.type]?.label||'')} · ${(e.questions||[]).length} câu · ${esc(e.authorName||'')}</div></div>
       <div class="side"><span class="chip st-${st}">${STATUS[st]}</span><span class="code">${esc(e.code||'')}</span><span class="small muted">${dmy(e.updatedAt)}</span></div></button>`;}).join('')}</div>`
-      :`<div class="empty"><h3>${S.exams.length?'Không có đề nào khớp bộ lọc':'Chưa có đề thi nào'}</h3><p>${S.exams.length?'Thử bỏ bớt điều kiện lọc.':'Tạo lớp, nhập giáo trình rồi bấm “Soạn đề mới”. Đề đã lưu sẽ hiện ở đây.'}</p></div>`}`;
+      :`<div class="empty"><h3>${visible.length?'Không có đề nào khớp bộ lọc':'Chưa có đề thi nào'}</h3><p>${visible.length?'Thử bỏ bớt điều kiện lọc.':'Tạo lớp, nhập giáo trình rồi bấm “Soạn đề mới”. Đề đã lưu sẽ hiện ở đây.'}</p></div>`}`;
 }
 $('#v-kho').addEventListener('input',e=>{if(e.target.id==='f-q'){S.filters.q=e.target.value;const pos=e.target.selectionStart;renderKho();const i=$('#f-q');i.focus();i.setSelectionRange(pos,pos);}});
 $('#v-kho').addEventListener('change',e=>{if(e.target.id==='f-cls'){S.filters.cls=e.target.value;renderKho();}if(e.target.id==='f-st'){S.filters.st=e.target.value;renderKho();}});
