@@ -329,11 +329,12 @@ async function guestPolicy(env) {
   const r = await env.DB.prepare("SELECT data FROM docs WHERE coll = 'settings' AND id = 'general'").first();
   const s = r ? JSON.parse(r.data) : {};
   // Khách chỉ xem lớp học, giáo trình, tài liệu. Đề thi, đáp án, ngân hàng câu hỏi luôn bị chặn.
-  return { on: s.guestView !== false, exams: false, answers: false };
+  return { on: s.guestView !== false, exams: false, answers: false, bank: s.guestView !== false && s.guestBank !== false };
 }
 function guestColl(coll, pol) {
   if (!pol.on) return false;
   if (['classes', 'materials', 'settings'].includes(coll)) return true;
+  if (coll === 'bank') return !!pol.bank; // khách xem ngân hàng câu hỏi để thử soạn đề
   if (/^materials\/[^/]+\/chunks$/.test(coll)) return true;
   return false;
 }
