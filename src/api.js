@@ -289,7 +289,7 @@ export async function onRequest(ctx) {
       else return fail(405, 'Không hỗ trợ.');
       if (p.coll === 'exams' && u.role !== 'admin') data.creatorId = existing?.creatorId || u.id;
       const text = JSON.stringify(data);
-      if (text.length > 900000) return fail(413, 'Dữ liệu quá lớn.');
+      if (text.length > 1900000) return fail(413, 'Dữ liệu quá lớn.');
       await env.DB.prepare('INSERT INTO docs (coll, id, data, updated) VALUES (?, ?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET data = excluded.data, updated = excluded.updated').bind(p.coll, p.id, text, now).run();
       return json({ ok: true });
     }
