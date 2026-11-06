@@ -88,8 +88,15 @@ function canWrite(u, coll, existing) {
   if (!u || u.role === 'viewer') return false;
   if (u.role === 'admin') return true;
   if (coll === 'settings' || coll === 'approvals') return false;
-  if (coll === 'exams' && existing && existing.creatorId && existing.creatorId !== u.id) return false;
+  if ((coll === 'exams' || coll === 'uploads') && existing && existing.creatorId && existing.creatorId !== u.id) return false;
   return true;
+}
+// Đề tải lên: giáo lý viên chỉ đọc/ghi tệp của chính mình
+const UP_CHUNKS = /^uploads\/([^/]+)\/chunks$/;
+async function upOwner(env, coll) {
+  const m = UP_CHUNKS.exec(coll); if (!m) return undefined;
+  const r = await env.DB.prepare("SELECT data FROM docs WHERE coll = 'uploads' AND id = ?").bind(m[1]).first();
+  return r ? (JSON.parse(r.data).creatorId || null) : null;
 }
 
 /* ---------- handler ---------- */
@@ -266,7 +273,8 @@ export async function onRequest(ctx) {
       const v = await env.DB.prepare('SELECT COUNT(*) AS n, MAX(updated) AS u FROM docs WHERE coll = ?').bind(p.coll).first();
       let docs = r.results.map((x) => ({ id: x.id, data: JSON.parse(x.data) }));
       // Giáo lý viên chỉ thấy đề do chính mình soạn; quản trị thấy toàn bộ
-      if (p.coll === 'exams' && u.role !== 'admin') docs = docs.filter((d) => d.data.creatorId === u.id);
+      if ((p.coll === 'exams' || p.coll === 'uploads') && u.role !== 'admin') docs = docs.filter((d) => d.data.creatorId === u.id);
+      if (u.role !== 'admin' && UP_CHUNKS.test(p.coll) && (await upOwner(env, p.coll)) !== u.id) docs = [];
       return json({ docs, version: (v.n || 0) + ':' + (v.u || 0) });
     }
     if (route === '/doc') {
@@ -274,8 +282,10 @@ export async function onRequest(ctx) {
       if (!p) return fail(400, 'Đường dẫn không hợp lệ.');
       const row = await env.DB.prepare('SELECT data FROM docs WHERE coll = ? AND id = ?').bind(p.coll, p.id).first();
       const existing = row ? JSON.parse(row.data) : null;
-      if (m === 'GET') return json({ data: p.coll === 'exams' && u.role !== 'admin' && existing && existing.creatorId !== u.id ? null : existing });
+      const own = u.role === 'admin' ? undefined : await upOwner(env, p.coll);
+      if (m === 'GET') return json({ data: (p.coll === 'exams' || p.coll === 'uploads') && u.role !== 'admin' && existing && existing.creatorId !== u.id ? null : own !== undefined && own !== u.id ? null : existing });
       if (!canWrite(u, p.coll, existing)) return fail(403, 'Bạn không có quyền thực hiện thao tác này.');
+      if (own !== undefined && own !== u.id) return fail(403, 'Bạn không có quyền thực hiện thao tác này.');
       const now = Date.now();
       if (m === 'DELETE') {
         await env.DB.prepare('DELETE FROM docs WHERE coll = ? AND id = ?').bind(p.coll, p.id).run();
@@ -287,7 +297,13 @@ export async function onRequest(ctx) {
       if (m === 'PUT') data = b;
       else if (m === 'PATCH') { if (!existing) return fail(404, 'Tài liệu không tồn tại.'); data = merge(existing, b); }
       else return fail(405, 'Không hỗ trợ.');
-      if (p.coll === 'exams' && u.role !== 'admin') data.creatorId = existing?.creatorId || u.id;
+      if ((p.coll === 'exams' || p.coll === 'uploads') && u.role !== 'admin') data.creatorId = existing?.creatorId || u.id;
+      // Chỉ quản trị mới duyệt hoặc trả về đề tải lên
+      if (p.coll === 'uploads' && u.role !== 'admin') {
+        if (!existing) data.status = data.status === 'uploading' ? 'uploading' : 'pending';
+        else data.status = existing.status === 'uploading' && data.status === 'pending' ? 'pending' : existing.status;
+        if (existing) { data.reviewNote = existing.reviewNote; data.reviewerName = existing.reviewerName; data.examId = existing.examId; }
+      }
       const text = JSON.stringify(data);
       if (text.length > 1900000) return fail(413, 'Dữ liệu quá lớn.');
       await env.DB.prepare('INSERT INTO docs (coll, id, data, updated) VALUES (?, ?, ?, ?) ON CONFLICT (coll, id) DO UPDATE SET data = excluded.data, updated = excluded.updated').bind(p.coll, p.id, text, now).run();
