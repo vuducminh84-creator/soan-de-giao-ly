@@ -179,6 +179,8 @@ details.menu .pop button:hover{background:var(--surface-2)}
 .filebox{background:var(--surface-2);border-radius:var(--r);max-height:78vh;overflow:auto}
 .filebox .upv-doc{margin:0 auto;padding:32px 36px;box-shadow:none}
 .filebox .upv-pdf{padding:12px}
+.docx-host .docx-wrapper{background:transparent!important;padding:16px 8px!important}
+.docx-host section.docx{box-shadow:0 2px 14px rgb(0 0 0 / .12)!important;margin-bottom:16px!important}
 .upform{border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:16px;background:var(--surface)}
 .uplist{border:1px solid var(--line);border-radius:var(--r);margin-bottom:18px;background:var(--surface)}
 .uplist>h2{font-size:15px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line)}
@@ -655,7 +657,7 @@ function blocksToDocx(ex,view){
   }}
   return {xml:out.join(''),code};
 }
-async function exportWord(ex,which){
+async function exportWord(ex,which,fname){
   if(S.me?.role==='guest'){window.__showLogin?.('Vui lòng đăng nhập để xuất tệp Word.');return;}
   if(!S.downloads){toast('Không thể tải tệp trong chế độ xem này.');return;}
   try{await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');}catch{toast('Không tải được bộ tạo tệp Word. Kiểm tra kết nối mạng.');return;}
@@ -678,7 +680,7 @@ async function exportWord(ex,which){
   zip.file('word/document.xml',doc);zip.file('word/styles.xml',styles);zip.file('word/footer1.xml',ftr);
   const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
   const suffix=which==='de'?'De':which==='da'?'DapAn':'De-DapAn';
-  try{await S.downloads.save({filename:`${suffix}_${code}.docx`,data:blob});toast('Đã xuất tệp Word.');}
+  try{await S.downloads.save({filename:fname||`${suffix}_${code}.docx`,data:blob});toast('Đã xuất tệp Word.');}
   catch(e){if(e?.code==='declined')return;toast(e?.code==='rate_limited'?'Đang có một hộp thoại tải về đang mở.':'Không xuất được tệp Word ('+(e?.code||'lỗi')+').');}
 }
 
@@ -781,7 +783,7 @@ function renderKho(){
   const pend=visible.filter(e=>statusOf(e)==='pending').length,appr=visible.filter(e=>statusOf(e)==='approved').length;
   const settingsHint=S.connected&&S.ready.settings&&S.settings.parish===DEFAULT_SETTINGS.parish&&S.isAdmin?`<div class="banner info">Vào <b>Cài đặt</b> để điền tên Giáo phận, Giáo xứ in trên đầu đề thi.</div>`:'';
   v.innerHTML=`${settingsHint}<div class="page-head"><div><h1>Kho đề thi</h1><p>${S.isAdmin?'Toàn bộ đề của các giáo lý viên. Quản trị mở lại để xem, xuất Word và ký duyệt.':'Các đề do bạn soạn. Đề của giáo lý viên khác chỉ quản trị xem được.'}</p></div>
-    ${writable()?'<div class="row"><button class="btn" data-act="upnew">⇪ Tải đề có sẵn lên</button><button class="btn primary" data-act="new">+ Soạn đề mới</button></div>':''}</div>
+    ${S.me&&S.me.role!=='guest'&&S.downloads?'<div class="row"><button class="btn" data-act="uptpl" title="Tải tệp Word mẫu có sẵn đầu đề, ô điểm, lời phê, ô ký duyệt để soạn đề trên Word">⬇ Tải mẫu đề Word</button>':'<div class="row">'}${writable()?'<button class="btn" data-act="upnew">⇪ Tải đề có sẵn lên</button><button class="btn primary" data-act="new">+ Soạn đề mới</button>':''}</div></div>
     ${upFormHTML()}${upListHTML()}
     <div class="stats"><span><b>${visible.length}</b> đề</span><span><b>${pend}</b> chờ duyệt</span><span><b>${appr}</b> đã duyệt</span><span><b>${S.classes.length}</b> lớp</span></div>
     <div class="filters"><select id="f-cls" aria-label="Lọc theo lớp"><option value="">Tất cả lớp</option>${S.classes.map(c=>`<option value="${c.id}" ${f.cls===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
@@ -1470,6 +1472,7 @@ const fsize=n=>n>=1048576?(n/1048576).toFixed(1).replace('.',',')+' MB':Math.max
 function myUploads(){return S.isAdmin?S.uploads.filter(u=>u.status==='pending'||(u.creatorId===S.uid&&u.status==='returned')):S.uploads.filter(u=>u.creatorId===S.uid&&(u.status==='pending'||u.status==='returned'));}
 function upFormHTML(){const f=S.upForm;if(!f||!writable())return '';
   return `<form class="upform stack" id="upform"><h2 style="margin:0;font-size:16px">Tải đề đã soạn sẵn lên</h2>
+    <div class="banner info" style="margin:0">Chưa có đề? Chọn lớp và loại bài bên dưới rồi bấm <button class="btn sm" type="button" data-act="uptpl">⬇ Tải mẫu đề Word</button> — soạn trên Word theo mẫu (giữ nguyên đầu đề, ô điểm, mã đề), lưu lại rồi tải lên ở đây.</div>
     <p class="small muted" style="margin:0">Chọn tệp Word (.docx) hoặc PDF. Đề chỉ được đưa vào Kho đề sau khi quản trị (Ban Giám Hiệu) xem và duyệt. Tối đa ${fsize(UP_MAX)}.</p>
     <div class="grid2"><label class="f">Lớp<select id="up-cls" required>${S.classes.map(c=>`<option value="${c.id}" ${f.classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
     <label class="f">Tên bài kiểm tra<input type="text" id="up-title" required value="${esc(f.title||'')}" placeholder="Ví dụ: Kiểm tra 45 phút – Bài 1 đến 5"></label>
@@ -1499,6 +1502,15 @@ async function deleteUpFiles(id,n){for(let i=0;i<(n||0);i++)await S.db.doc(`uplo
 async function downloadUp(id){if(!id)return;if(!S.downloads){toast('Cần đăng nhập để tải tệp.');return;}
   try{const {blob,meta}=await upBlob(id);await S.downloads.save({filename:meta.fileName,data:blob});}
   catch(e){if(e?.code!=='declined')toast('Không tải được tệp ('+(e?.code||e?.message||'lỗi')+').');}}
+// Hiển thị tệp Word giống bản gốc (giữ khung bảng, logo, A/B/C, phông chữ, khổ A4); lỗi thì dùng bản đơn giản
+async function renderDocxExact(box,buf){
+  try{await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');await loadScript('https://cdn.jsdelivr.net/npm/docx-preview@0.3.5/dist/docx-preview.min.js');
+    if(!window.docx?.renderAsync)return false;
+    const host=document.createElement('div');host.className='docx-host';box.innerHTML='';box.appendChild(host);
+    await window.docx.renderAsync(buf.slice(0),host,null,{className:'docx',inWrapper:true,breakPages:true,ignoreLastRenderedPageBreak:true,renderHeaders:true,renderFooters:true,renderFootnotes:true,useBase64URL:true,experimental:true});
+    const fit=()=>{const w=host.querySelector('section.docx');if(!w||!box.clientWidth)return;const z=Math.min(1,(box.clientWidth-16)/(w.offsetWidth+16));host.style.zoom=z<1?z:'';};
+    fit();setTimeout(fit,50);return true;
+  }catch(e){console.warn('docx-preview',e);return false;}}
 async function renderFileInto(box,buf,mime,name){
   box.innerHTML='<div class="empty">Đang mở tệp…</div>';
   try{if(/pdf/i.test(mime||name)){
@@ -1506,7 +1518,8 @@ async function renderFileInto(box,buf,mime,name){
       const pdf=await lib.getDocument({data:new Uint8Array(buf.slice(0)),isEvalSupported:false}).promise;box.innerHTML='<div class="upv-pdf"></div>';const wrap=box.firstChild;
       for(let i=1;i<=Math.min(pdf.numPages,40);i++){const pg=await pdf.getPage(i);const vp=pg.getViewport({scale:1.6});const cv=document.createElement('canvas');cv.width=vp.width;cv.height=vp.height;wrap.appendChild(cv);await pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;}
       if(pdf.numPages>40)wrap.insertAdjacentHTML('beforeend',`<p class="small muted">Chỉ hiển thị 40/${pdf.numPages} trang. Tải tệp gốc để xem đủ.</p>`);
-    }else{await loadScript(MAMMOTH_URL);const r=await mammoth.convertToHtml({arrayBuffer:buf},{styleMap:['u => u']});
+    }else{if(await renderDocxExact(box,buf))return;
+      await loadScript(MAMMOTH_URL);const r=await mammoth.convertToHtml({arrayBuffer:buf},{styleMap:['u => u']});
       box.innerHTML=`<div class="upv-doc">${r.value.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/\son\w+="[^"]*"/gi,'')}</div>`;}
   }catch(e){box.innerHTML='<div class="empty">Không xem trước được tệp này. Bấm “Tải tệp” để mở bằng Word hoặc trình đọc PDF.</div>';}}
 async function openUpPreview(id){if(!id)return;let el=$('#upv');
@@ -1518,6 +1531,21 @@ async function openUpPreview(id){if(!id)return;let el=$('#upv');
   el.dataset.id=id;el.hidden=false;document.body.style.overflow='hidden';$('#upv-title').textContent='Đang tải…';const body=$('#upv-body');body.innerHTML='<div class="empty">Đang tải tệp…</div>';
   try{const {buf,meta}=await upBlob(id);$('#upv-title').textContent=meta.title||meta.fileName;await renderFileInto(body,buf,meta.mime,meta.fileName);}
   catch(e){body.innerHTML='<div class="empty">Không tải được tệp ('+esc(e?.code||e?.message||'lỗi')+').</div>';}}
+// Tệp Word mẫu: đầu đề, ô điểm/lời phê, các phần câu hỏi mẫu, trang đáp án – để soạn trên Word rồi tải lên
+function templateExam(){const f=S.upForm||{};
+  const classId=$('#up-cls')?.value||f.classId||S.filters.cls||S.classes[0]?.id||'';const type=$('#up-type')?.value||f.type||'45p';
+  const d=newDraft();d.classId=classId;d.type=type;d.duration=TYPES[type]?.dur||45;d.format='mix';
+  d.title=$('#up-title')?.value.trim()||'';d.authorName=$('#up-author')?.value.trim()||S.me?.name||'';d.scope='[Ghi phạm vi kiểm tra, ví dụ: Bài 1 đến Bài 5]';
+  d.code=makeCode(d);
+  const Q=(t,o)=>convertQ({type:t,level:'',source:'',...o},t);
+  d.questions=[
+    Q('mc',{text:'[Gõ câu hỏi trắc nghiệm số 1]',options:['[Phương án A]','[Phương án B]','[Phương án C]','[Phương án D]'],answer:'A',points:1.5,explain:'[Giải thích ngắn, nếu cần]'}),
+    Q('mc',{text:'[Gõ câu hỏi trắc nghiệm số 2 — chép thêm câu nếu cần]',options:['[Phương án A]','[Phương án B]','[Phương án C]','[Phương án D]'],answer:'B',points:1.5}),
+    Q('tf',{text:'[Gõ một mệnh đề để học sinh chọn Đúng hoặc Sai]',answer:'Đúng',points:1}),
+    Q('fill',{text:'[Gõ câu có chỗ trống] ______ [phần còn lại của câu].',answer:'[Từ cần điền]',points:1}),
+    Q('essay',{text:'[Gõ câu hỏi tự luận]',answer:'[Đáp án mẫu]',lines:8,points:5,rubric:[{idea:'[Ý thứ nhất]',points:2.5},{idea:'[Ý thứ hai]',points:2.5}]})];
+  d.gradingNotes=['Đây là tệp mẫu: thay các chữ trong ngoặc vuông bằng nội dung của bạn, thêm/bớt câu và chỉnh điểm cho đủ 10 điểm.','Có thể xoá trang đáp án nếu không cần, nhưng nên giữ để quản trị duyệt nhanh hơn.'];
+  return d;}
 async function sendUpload(){const f=$('#upform');if(!f)return;const file=$('#up-file').files[0];
   const title=$('#up-title').value.trim(),author=$('#up-author').value.trim(),classId=$('#up-cls').value;
   if(!classId){toast('Hãy tạo lớp trước.');return;}if(!title){toast('Nhập tên bài kiểm tra.');$('#up-title').focus();return;}
@@ -1536,6 +1564,7 @@ async function sendUpload(){const f=$('#upform');if(!f)return;const file=$('#up-
 async function upAction(a,t){const id=t.dataset.id;const up=S.uploads.find(u=>u.id===id);
   if(a==='upnew'){S.upForm={classId:S.filters.cls||S.classes[0]?.id||''};renderKho();$('#up-title')?.focus();return true;}
   if(a==='upcancel'){S.upForm=null;renderKho();return true;}
+  if(a==='uptpl'){const ex=templateExam();exportWord(ex,'both','Mau-De_'+ex.code+'.docx');return true;}
   if(!up)return true;
   if(a==='upview'){openUpPreview(id);return true;}
   if(a==='updl'){downloadUp(id);return true;}
