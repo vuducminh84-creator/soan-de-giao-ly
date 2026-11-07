@@ -3,8 +3,8 @@
   const ROLE = { admin: 'Quản trị / Ban Giám Hiệu', glv: 'Giáo lý viên', viewer: 'Chỉ xem' };
   const ROLE_HINT = {
     admin: 'Duyệt đề, sửa cài đặt, quản lý tài khoản, sửa và xoá mọi đề.',
-    glv: 'Tạo lớp, nhập giáo trình, soạn đề, sửa đề của mình, xem toàn bộ kho đề.',
-    viewer: 'Chỉ xem kho đề và xuất Word.',
+    glv: 'Tạo lớp, nhập giáo trình, soạn đề, tải đề lên chờ duyệt; chỉ xem và sửa đề của chính mình.',
+    viewer: 'Chỉ xem lớp học, giáo trình, tài liệu; không xem được đề của giáo lý viên.',
   };
 
   const _renderWho = renderWho;
