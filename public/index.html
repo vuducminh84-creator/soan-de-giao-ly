@@ -180,6 +180,7 @@ details.menu .pop button:hover{background:var(--surface-2)}
 .filebox .upv-doc{margin:0 auto;padding:32px 36px;box-shadow:none}
 .filebox .upv-pdf{padding:12px}
 .docx-host .docx-wrapper{background:transparent!important;padding:16px 8px!important}
+.docx-host .tabfill{display:inline-block;height:1em;vertical-align:baseline}.docx-host .tabfill[data-l=dot],.docx-host .tabfill[data-l=middleDot]{border-bottom:1.5px dotted #000}.docx-host .tabfill[data-l=underscore],.docx-host .tabfill[data-l=hyphen],.docx-host .tabfill[data-l=heavy]{border-bottom:1px solid #000}
 .docx-host section.docx{box-shadow:0 2px 14px rgb(0 0 0 / .12)!important;margin-bottom:16px!important}
 .upform{border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:16px;background:var(--surface)}
 .uplist{border:1px solid var(--line);border-radius:var(--r);margin-bottom:18px;background:var(--surface)}
@@ -1503,13 +1504,43 @@ async function downloadUp(id){if(!id)return;if(!S.downloads){toast('Cần đăng
   try{const {blob,meta}=await upBlob(id);await S.downloads.save({filename:meta.fileName,data:blob});}
   catch(e){if(e?.code!=='declined')toast('Không tải được tệp ('+(e?.code||e?.message||'lỗi')+').');}}
 // Hiển thị tệp Word giống bản gốc (giữ khung bảng, logo, A/B/C, phông chữ, khổ A4); lỗi thì dùng bản đơn giản
+const TABMARK=/(\d+)/;
+async function prepTabs(buf){// thay dấu Tab có dòng chấm (……) bằng ký hiệu riêng để tự vẽ đúng độ dài
+  const stops=[];let data=buf.slice(0);
+  try{const zip=await JSZip.loadAsync(data);const f=zip.file('word/document.xml');if(!f)return {data,stops};let xml=await f.async('string');let changed=false;
+    xml=xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g,p=>{const td=/<w:tabs>([\s\S]*?)<\/w:tabs>/.exec(p);if(!td)return p;
+      const list=[...td[1].matchAll(/<w:tab\b([^>]*)\/>/g)].map(m=>{const a=m[1];const g=k=>(new RegExp('w:'+k+'="([^"]*)"').exec(a)||[])[1];return {val:g('val')||'left',pos:(+g('pos')||0)/20,leader:g('leader')||'none'};})
+        .filter(t=>t.val!=='clear').sort((a,b)=>a.pos-b.pos);
+      if(!list.length)return p;
+      const idx=stops.push(list)-1;changed=true;
+      return p.replace(/<w:tab\s*\/>/g,`<w:t xml:space="preserve">${idx}</w:t>`);});
+    if(changed){zip.file('word/document.xml',xml);data=await zip.generateAsync({type:'arraybuffer'});}
+  }catch(e){console.warn('prepTabs',e);data=buf.slice(0);stops.length=0;}
+  return {data,stops};}
+function drawTabs(host,stops){const PX=96/72;
+  const walker=document.createTreeWalker(host,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue.includes(''))nodes.push(walker.currentNode);
+  for(const n of nodes){let t=n.nodeValue;const frag=document.createDocumentFragment();let m;
+    while((m=TABMARK.exec(t))){if(m.index)frag.appendChild(document.createTextNode(t.slice(0,m.index)));
+      const s=document.createElement('span');s.className='tabfill';s.dataset.s=m[1];frag.appendChild(s);t=t.slice(m.index+m[0].length);}
+    if(t)frag.appendChild(document.createTextNode(t));n.parentNode.replaceChild(frag,n);}
+  host.querySelectorAll('.tabfill').forEach(s=>{const list=stops[+s.dataset.s]||[];const p=s.closest('p');if(!p)return;
+    const pb=p.getBoundingClientRect(),cs=getComputedStyle(p);const origin=pb.left-parseFloat(cs.marginLeft||0)+parseFloat(cs.paddingLeft||0)*0;
+    const left=(s.getBoundingClientRect().left-origin)/PX;let tab=list.find(x=>x.pos>left+0.5);
+    if(!tab){const def=36;tab={val:'left',leader:'none',pos:(Math.floor(left/def)+1)*def};}
+    let w=tab.pos-left;
+    if(tab.val==='right'||tab.val==='center'){const r=document.createRange();r.setStartAfter(s);const nx=[...p.querySelectorAll('.tabfill')].find(x=>s.compareDocumentPosition(x)&Node.DOCUMENT_POSITION_FOLLOWING);
+      if(nx)r.setEndBefore(nx);else r.setEndAfter(p.lastChild||p);const tw=r.getBoundingClientRect().width/PX;w-=tab.val==='center'?tw/2:tw;}
+    w=Math.max(2,w*PX-1);const maxW=pb.right-s.getBoundingClientRect().left-1;if(maxW>4)w=Math.min(w,maxW);
+    s.style.width=w+'px';s.dataset.l=tab.leader;});}
 async function renderDocxExact(box,buf){
   try{await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');await loadScript('https://cdn.jsdelivr.net/npm/docx-preview@0.3.5/dist/docx-preview.min.js');
     if(!window.docx?.renderAsync)return false;
+    const {data,stops}=await prepTabs(buf);
     const host=document.createElement('div');host.className='docx-host';box.innerHTML='';box.appendChild(host);
-    await window.docx.renderAsync(buf.slice(0),host,null,{className:'docx',inWrapper:true,breakPages:true,ignoreLastRenderedPageBreak:true,renderHeaders:true,renderFooters:true,renderFootnotes:true,useBase64URL:true,experimental:true});
+    await window.docx.renderAsync(data,host,null,{className:'docx',inWrapper:true,breakPages:true,ignoreLastRenderedPageBreak:true,renderHeaders:true,renderFooters:true,renderFootnotes:true,useBase64URL:true,experimental:false});
+    try{drawTabs(host,stops);}catch(e){console.warn('drawTabs',e);}
     const fit=()=>{const w=host.querySelector('section.docx');if(!w||!box.clientWidth)return;const z=Math.min(1,(box.clientWidth-16)/(w.offsetWidth+16));host.style.zoom=z<1?z:'';};
-    fit();setTimeout(fit,50);return true;
+    fit();return true;
   }catch(e){console.warn('docx-preview',e);return false;}}
 async function renderFileInto(box,buf,mime,name){
   box.innerHTML='<div class="empty">Đang mở tệp…</div>';
