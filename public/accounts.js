@@ -3,7 +3,7 @@
   const ROLE = { admin: 'Quản trị / Ban Giám Hiệu', glv: 'Giáo lý viên', viewer: 'Chỉ xem' };
   const ROLE_HINT = {
     admin: 'Duyệt đề, sửa cài đặt, quản lý tài khoản, sửa và xoá mọi đề.',
-    glv: 'Tạo lớp, nhập giáo trình, soạn đề, tải đề lên chờ duyệt; sửa đề của mình; xem đề đã gửi duyệt của lớp mình phụ trách (quản trị gán ở tab Lớp học).',
+    glv: 'Tạo lớp, nhập giáo trình, soạn đề, tải đề lên chờ duyệt; sửa đề của mình; xem đề đã gửi duyệt của lớp mình phụ trách (quản trị gán khi tạo tài khoản, ở mục Phân công lớp hoặc tab Lớp học).',
     viewer: 'Chỉ xem lớp học, giáo trình, tài liệu; không xem được đề của giáo lý viên.',
   };
 
@@ -49,7 +49,7 @@
     if (!box) return;
     const me = __me();
     box.innerHTML = users.length ? `<div class="exlist">${users.map((u) => `<div class="mrow urow" data-id="${u.id}">
-        <div style="min-width:0"><div style="font-weight:600">${esc(u.name)}${u.id === me.id ? ' <span class="chip st-approved">bạn</span>' : ''}</div><div class="small muted">${esc(u.username)}</div></div>
+        <div style="min-width:0"><div style="font-weight:600">${esc(u.name)}${u.id === me.id ? ' <span class="chip st-approved">bạn</span>' : ''}</div><div class="small muted">${esc(u.username)}${(() => { const cs = classesOf(u.id).map((c) => c.name); return cs.length ? ' · Lớp: ' + esc(cs.join(', ')) : ''; })()}</div></div>
         <div class="row" style="gap:6px;justify-content:flex-end">
           <select data-u="role" aria-label="Vai trò" ${u.id === me.id ? 'disabled' : ''} style="width:auto">${Object.entries(ROLE).map(([k, l]) => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${l}</option>`).join('')}</select>
           <button class="btn sm" data-u="reset">Đặt lại mật khẩu</button>
@@ -83,6 +83,7 @@
           <label class="f">Tên đăng nhập<input type="text" id="nu-user" required autocapitalize="off" spellcheck="false" placeholder="vd: giuse.an"></label>
           <label class="f">Mật khẩu ban đầu<input type="text" id="nu-pass" required placeholder="ít nhất 8 ký tự"></label>
           <label class="f">Vai trò<select id="nu-role">${Object.entries(ROLE).map(([k, l]) => `<option value="${k}" ${k === 'glv' ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+          <div class="stack" style="gap:6px"><span style="font-size:13px;font-weight:500">Lớp phụ trách <span class="muted" style="font-weight:400">(chọn được nhiều lớp; sửa sau ở mục Phân công lớp phụ trách)</span></span>${classChecks('nu-c', [])}</div>
           <div class="hint">${Object.entries(ROLE_HINT).map(([k, h]) => `<b>${ROLE[k]}:</b> ${h}`).join('<br>')}</div>
           <div><button class="btn primary" type="submit">Tạo tài khoản</button></div></form>` : ''}
       <div><button class="btn ghost danger" type="button" id="logout-btn">Đăng xuất</button></div></div>`;
@@ -101,7 +102,13 @@
     document.getElementById('nu-form').onsubmit = async (e) => {
       e.preventDefault();
       const body = { name: document.getElementById('nu-name').value.trim(), username: document.getElementById('nu-user').value.trim(), password: document.getElementById('nu-pass').value, role: document.getElementById('nu-role').value };
-      try { await __api('/users', { method: 'POST', body: JSON.stringify(body) }); toast('Đã tạo tài khoản ' + body.username + '. Gửi tên đăng nhập và mật khẩu cho người dùng.'); e.target.reset(); document.getElementById('nu-role').value = 'glv'; loadUsers(); }
+      const cls = [...document.querySelectorAll('.nu-c:checked')].map((x) => x.value);
+      try {
+        const r = await __api('/users', { method: 'POST', body: JSON.stringify(body) });
+        if (cls.length && r.user?.id) await setClassesFor(r.user.id, cls);
+        toast('Đã tạo tài khoản ' + body.username + (cls.length ? ' và gán ' + cls.length + ' lớp' : '') + '. Gửi tên đăng nhập và mật khẩu cho người dùng.');
+        e.target.reset(); document.getElementById('nu-role').value = 'glv'; await loadPeople(); S._peopleLoaded = true; renderCD();
+      }
       catch (err) { toast(err.message); }
     };
     const box = document.getElementById('ulist');

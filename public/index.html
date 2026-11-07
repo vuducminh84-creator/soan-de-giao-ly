@@ -402,6 +402,18 @@ function peopleName(id){return S.people.find(x=>x.id===id)?.name||'';}
 async function loadPeople(){try{if(window.__api){S.people=(await window.__api('/people')).people||[];}
   else{const sn=await S.db.collection('people').get();S.people=sn.docs.map(d=>({id:d.id,...d.data()}));}
   S.people.sort((a,b)=>(a.name||'').localeCompare(b.name||'','vi'));}catch{S.people=[];}}
+function classesOf(uid){return S.classes.filter(c=>(c.teacherIds||[]).includes(uid));}
+async function setClassesFor(uid,ids){// gán / bỏ gán một tài khoản vào các lớp
+  for(const c of S.classes){const cur=c.teacherIds||[];const want=ids.includes(c.id);if(want===cur.includes(uid))continue;
+    const next=want?[...cur,uid]:cur.filter(x=>x!==uid);await S.db.doc('classes/'+c.id).update({teacherIds:next});c.teacherIds=next;}}
+function classChecks(cls,checked){return S.classes.length?`<div style="display:flex;flex-wrap:wrap;gap:4px 14px">${S.classes.map(c=>`<label style="display:flex;gap:6px;align-items:center;font-weight:400;font-size:13.5px"><input type="checkbox" class="${cls}" value="${esc(c.id)}" ${checked.includes(c.id)?'checked':''}>${esc(c.name)}</label>`).join('')}</div>`:'<p class="small muted" style="margin:0">Chưa có lớp nào. Tạo lớp ở tab Lớp học trước.</p>';}
+function assignPanelHTML(){if(!S.isAdmin||!S.connected)return '';
+  if(!S._peopleLoaded){S._peopleLoaded=true;loadPeople().then(()=>{if(S.tab==='cd')renderCD();});}
+  return `<div class="panel" id="assign-panel"><h2>Phân công lớp phụ trách</h2><div class="stack">
+    <p class="small muted" style="margin:0">Chọn lớp cho từng giáo lý viên. Người phụ trách được xem các đề đã gửi duyệt, đã duyệt và đề tải lên của lớp đó (không sửa, không xoá đề của người khác).</p>
+    ${S.people.length?`<div class="exlist">${S.people.map(u=>`<div class="mrow" data-uid="${esc(u.id)}" style="grid-template-columns:1fr"><div style="font-weight:600">${esc(u.name||'(chưa có tên)')}</div>
+      ${classChecks('as-c',classesOf(u.id).map(c=>c.id))}<div><button class="btn sm" type="button" data-a="saveassign">Lưu phân công</button></div></div>`).join('')}</div>`
+      :`<p class="small muted" style="margin:0">${window.__api?'Chưa có tài khoản. Tạo tài khoản ở mục Tài khoản bên dưới.':'Chưa có ai trong danh sách. Giáo lý viên cần mở ứng dụng ít nhất một lần.'}</p>`}</div></div>`;}
 function canEditExam(ex){return !!ex&&(S.isAdmin||(S.uid&&ex.creatorId===S.uid));}
 function writable(){return S.connected&&S.canWrite!==false;}
 
@@ -773,7 +785,7 @@ function setTab(t){S.tab=t;document.querySelectorAll('#tabs button').forEach(b=>
   ['kho','soan','nh','lop','gt','tl','cd'].forEach(k=>$('#v-'+k).hidden=k!==t);render();window.scrollTo(0,0);}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)setTab(b.dataset.tab);});
 function render(){renderBanner();renderWho();renderBrand();
-  if(S.tab==='kho')renderKho();if(S.tab==='soan')renderCompose();if(S.tab==='nh')renderBank();if(S.tab==='lop')renderLop();if(S.tab==='gt'||S.tab==='tl')renderGT();if(S.tab==='cd')renderCD();}
+  if(S.tab==='kho')renderKho();if(S.tab==='soan')renderCompose();if(S.tab==='nh')renderBank();if(S.tab==='lop')renderLop();if(S.tab==='gt'||S.tab==='tl')renderGT();if(S.tab==='cd'&&!document.activeElement?.closest('#v-cd .panel'))renderCD();}
 function renderBanner(){let h='';
   if(!S.connected&&S.signedOut)h=`<div class="banner">Không kết nối được máy chủ dữ liệu. Tải lại trang.</div>`;
   else if(S.connected&&S.canWrite===false)h=`<div class="banner info">Tài khoản của bạn chỉ có quyền xem. Muốn tạo lớp và soạn đề, hãy nhờ quản trị đổi vai trò thành <b>Giáo lý viên</b>.</div>`;
@@ -1770,11 +1782,14 @@ function renderCD(){const v=$('#v-cd');const s=S.settings;const ro=!S.isAdmin||!
     ${[['logo1','Logo xứ đoàn (góc trái)'],['logo2','Logo Ban Giáo Lý (góc phải)']].map(([k,l])=>`<div class="logoslot"><div class="pv">${s[k]?`<img src="${esc(s[k].data)}" alt="${l}">`:'Chưa có logo'}</div>
       <div class="stack" style="gap:6px"><b style="font-size:13.5px">${l}</b>${ro?'':`<div class="row" style="gap:6px"><button class="btn sm" data-a="uplogo" data-k="${k}">${s[k]?'Đổi logo':'Tải logo lên'}</button>${s[k]?`<button class="btn sm ghost danger" data-a="dellogo" data-k="${k}">Xoá</button>`:''}</div>`}</div></div>`).join('')}
   </div></div>
-  <div class="panel" id="acct-panel"></div></div>`;}
+  ${assignPanelHTML()}<div class="panel" id="acct-panel"></div></div>`;}
 let logoKey='';
 $('#v-cd').addEventListener('click',async e=>{const lb=e.target.closest('[data-a="uplogo"],[data-a="dellogo"]');
   if(lb){logoKey=lb.dataset.k;if(lb.dataset.a==='uplogo'){$('#logopick').click();return;}
     const rec={...S.settings};delete rec[logoKey];await safeWrite(()=>S.db.doc('settings/general').set(rec),'Đã xoá logo.');return;}
+  const sa=e.target.closest('[data-a="saveassign"]');
+  if(sa){const row=sa.closest('[data-uid]');const ids=[...row.querySelectorAll('.as-c:checked')].map(x=>x.value);const nm=row.querySelector('div').textContent;
+    await safeWrite(()=>setClassesFor(row.dataset.uid,ids),'Đã lưu lớp phụ trách cho '+nm+'.');return;}
   if(!e.target.closest('[data-a="saveset"]'))return;
   const rec={...S.settings,diocese:$('#s-dio').value.trim(),parish:$('#s-par').value.trim(),board:$('#s-board').value.trim(),schoolYear:$('#s-year').value.trim(),approverTitle:$('#s-appr').value.trim()||'BAN GIÁM HIỆU',examNote:$('#s-note').value.trim()};
   await safeWrite(()=>S.db.doc('settings/general').set(rec),'Đã lưu cài đặt.');});
@@ -1791,7 +1806,7 @@ function renderBrand(){const l=S.settings.logo1||S.settings.logo2;$('#brandmark'
 
 /* ================= boot ================= */
 function onErr(e){if(e?.code==='revoked')S.errors='Quyền truy cập đã thay đổi. Tải lại trang.';else S.errors='Mất kết nối dữ liệu ('+(e?.code||'lỗi')+'). Tải lại trang.';renderBanner();}
-function refreshFromData(){renderBanner();renderBrand();if(S.tab==='kho'&&($('#upform')||document.activeElement?.closest('.retf')))return;if(S.tab==='nh'&&!document.activeElement?.closest('#v-nh .panel'))renderBank();if(S.tab==='kho')renderKho();if(S.tab==='lop'&&!S.editClass)renderLop();if(S.tab==='gt'||S.tab==='tl')renderGT();if(S.tab==='cd')renderCD();
+function refreshFromData(){renderBanner();renderBrand();if(S.tab==='kho'&&($('#upform')||document.activeElement?.closest('.retf')))return;if(S.tab==='nh'&&!document.activeElement?.closest('#v-nh .panel'))renderBank();if(S.tab==='kho')renderKho();if(S.tab==='lop'&&!S.editClass)renderLop();if(S.tab==='gt'||S.tab==='tl')renderGT();if(S.tab==='cd'&&!document.activeElement?.closest('#v-cd .panel'))renderCD();
   if(S.tab==='soan'&&S.draft){if(!$('#cfg'))renderCompose();else if(!document.activeElement?.closest('#cfg'))renderConfig();schedulePreview();}}
 render();
 (async()=>{
