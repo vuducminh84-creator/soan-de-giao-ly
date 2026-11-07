@@ -93,6 +93,23 @@ function canWrite(u, coll, existing) {
 }
 // Đề tải lên: giáo lý viên chỉ đọc/ghi tệp của chính mình
 const UP_CHUNKS = /^uploads\/([^/]+)\/chunks$/;
+// Giáo lý viên phụ trách lớp (quản trị gán trong classes.teacherIds) xem được đề đã gửi duyệt/đã duyệt của lớp
+async function teachMap(env) {
+  const r = await env.DB.prepare("SELECT id, data FROM docs WHERE coll = 'classes'").all();
+  const m = {}; for (const x of r.results) { const d = JSON.parse(x.data); m[x.id] = Array.isArray(d.teacherIds) ? d.teacherIds : []; } return m;
+}
+function examVisible(u, d, tm, ap, id) {
+  if (!d) return false;
+  if (u.role === 'admin' || d.creatorId === u.id) return true;
+  if (!(tm[d.classId] || []).includes(u.id)) return false;
+  return !!(d.submitted || d.kind === 'file' || ap[id] === d.version);
+}
+async function upReadable(env, u, uploadId) {
+  const r = await env.DB.prepare("SELECT id, data FROM docs WHERE coll = 'exams' AND json_extract(data, '$.file.uploadId') = ?").bind(uploadId).all();
+  if (!r.results.length) return false;
+  const tm = await teachMap(env), ap = await approvedMap(env);
+  return r.results.some((x) => examVisible(u, JSON.parse(x.data), tm, ap, x.id));
+}
 async function upOwner(env, coll) {
   const m = UP_CHUNKS.exec(coll); if (!m) return undefined;
   const r = await env.DB.prepare("SELECT data FROM docs WHERE coll = 'uploads' AND id = ?").bind(m[1]).first();
@@ -255,6 +272,11 @@ export async function onRequest(ctx) {
       const r = await env.DB.prepare(`SELECT coll, COUNT(*) AS n, MAX(updated) AS u FROM docs WHERE coll IN (${colls.map(() => '?').join(',')}) GROUP BY coll`).bind(...colls).all();
       const versions = Object.fromEntries(colls.map((c) => [c, '0:0']));
       for (const row of r.results) versions[row.coll] = row.n + ':' + row.u;
+      // Đề giáo lý viên được xem phụ thuộc lớp phụ trách và trạng thái duyệt
+      if (colls.includes('exams') && u.role !== 'admin') {
+        const a = await env.DB.prepare("SELECT coll, COUNT(*) AS n, MAX(updated) AS u FROM docs WHERE coll IN ('classes','approvals') GROUP BY coll").all();
+        versions.exams += '|' + a.results.map((x) => x.coll + x.n + ':' + x.u).join('|');
+      }
       return json({ versions });
     }
     if (route === '/docs' && m === 'GET') {
@@ -273,8 +295,9 @@ export async function onRequest(ctx) {
       const v = await env.DB.prepare('SELECT COUNT(*) AS n, MAX(updated) AS u FROM docs WHERE coll = ?').bind(p.coll).first();
       let docs = r.results.map((x) => ({ id: x.id, data: JSON.parse(x.data) }));
       // Giáo lý viên chỉ thấy đề do chính mình soạn; quản trị thấy toàn bộ
-      if ((p.coll === 'exams' || p.coll === 'uploads') && u.role !== 'admin') docs = docs.filter((d) => d.data.creatorId === u.id);
-      if (u.role !== 'admin' && UP_CHUNKS.test(p.coll) && (await upOwner(env, p.coll)) !== u.id) docs = [];
+      if (p.coll === 'uploads' && u.role !== 'admin') docs = docs.filter((d) => d.data.creatorId === u.id);
+      if (p.coll === 'exams' && u.role !== 'admin') { const tm = await teachMap(env), ap = await approvedMap(env); docs = docs.filter((d) => examVisible(u, d.data, tm, ap, d.id)); }
+      if (u.role !== 'admin' && UP_CHUNKS.test(p.coll) && (await upOwner(env, p.coll)) !== u.id && !(await upReadable(env, u, UP_CHUNKS.exec(p.coll)[1]))) docs = [];
       return json({ docs, version: (v.n || 0) + ':' + (v.u || 0) });
     }
     if (route === '/doc') {
@@ -283,7 +306,13 @@ export async function onRequest(ctx) {
       const row = await env.DB.prepare('SELECT data FROM docs WHERE coll = ? AND id = ?').bind(p.coll, p.id).first();
       const existing = row ? JSON.parse(row.data) : null;
       const own = u.role === 'admin' ? undefined : await upOwner(env, p.coll);
-      if (m === 'GET') return json({ data: (p.coll === 'exams' || p.coll === 'uploads') && u.role !== 'admin' && existing && existing.creatorId !== u.id ? null : own !== undefined && own !== u.id ? null : existing });
+      if (m === 'GET') {
+        if (!existing || u.role === 'admin') return json({ data: existing });
+        if (p.coll === 'uploads' && existing.creatorId !== u.id) return json({ data: null });
+        if (p.coll === 'exams' && !examVisible(u, existing, await teachMap(env), await approvedMap(env), p.id)) return json({ data: null });
+        if (own !== undefined && own !== u.id && !(await upReadable(env, u, UP_CHUNKS.exec(p.coll)[1]))) return json({ data: null });
+        return json({ data: existing });
+      }
       if (!canWrite(u, p.coll, existing)) return fail(403, 'Bạn không có quyền thực hiện thao tác này.');
       if (own !== undefined && own !== u.id) return fail(403, 'Bạn không có quyền thực hiện thao tác này.');
       const now = Date.now();
@@ -298,6 +327,8 @@ export async function onRequest(ctx) {
       else if (m === 'PATCH') { if (!existing) return fail(404, 'Tài liệu không tồn tại.'); data = merge(existing, b); }
       else return fail(405, 'Không hỗ trợ.');
       if ((p.coll === 'exams' || p.coll === 'uploads') && u.role !== 'admin') data.creatorId = existing?.creatorId || u.id;
+      // Chỉ quản trị gán giáo lý viên phụ trách lớp
+      if (p.coll === 'classes' && u.role !== 'admin') { if (existing?.teacherIds) data.teacherIds = existing.teacherIds; else delete data.teacherIds; }
       // Chỉ quản trị mới duyệt hoặc trả về đề tải lên
       if (p.coll === 'uploads' && u.role !== 'admin') {
         if (!existing) data.status = data.status === 'uploading' ? 'uploading' : 'pending';
