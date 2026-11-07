@@ -1542,16 +1542,27 @@ async function renderDocxExact(box,buf){
     const fit=()=>{const w=host.querySelector('section.docx');if(!w||!box.clientWidth)return;const z=Math.min(1,(box.clientWidth-16)/(w.offsetWidth+16));host.style.zoom=z<1?z:'';};
     fit();return true;
   }catch(e){console.warn('docx-preview',e);return false;}}
-async function renderFileInto(box,buf,mime,name){
+async function renderFileInto(box,buf,mime,name,id){
   box.innerHTML='<div class="empty">Đang mở tệp…</div>';
   try{if(/pdf/i.test(mime||name)){
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');const lib=window['pdfjs-dist/build/pdf'];lib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       const pdf=await lib.getDocument({data:new Uint8Array(buf.slice(0)),isEvalSupported:false}).promise;box.innerHTML='<div class="upv-pdf"></div>';const wrap=box.firstChild;
       for(let i=1;i<=Math.min(pdf.numPages,40);i++){const pg=await pdf.getPage(i);const vp=pg.getViewport({scale:1.6});const cv=document.createElement('canvas');cv.width=vp.width;cv.height=vp.height;wrap.appendChild(cv);await pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;}
       if(pdf.numPages>40)wrap.insertAdjacentHTML('beforeend',`<p class="small muted">Chỉ hiển thị 40/${pdf.numPages} trang. Tải tệp gốc để xem đủ.</p>`);
-    }else{if(await renderDocxExact(box,buf))return;
+    }else{
+      // Word: xem đúng định dạng phải mở tệp gốc; "Xem nhanh" chỉ để đọc lướt nội dung
+      S._quick=S._quick||{};
+      if(!S._quick[id]){box.innerHTML=`<div class="empty" style="text-align:center"><h3 style="margin:0 0 6px">Tệp Word: ${esc(name||'')}</h3>
+          <p style="margin:0 0 12px">Để xem và in đúng như bản gốc (khung, bảng, dòng chấm, hình…), hãy tải tệp về và mở bằng Microsoft Word hoặc WPS.</p>
+          <div class="row" style="justify-content:center"><button class="btn primary" type="button" data-fx="dl">Tải tệp đề gốc</button><button class="btn" type="button" data-fx="quick">Xem nhanh nội dung</button></div>
+          <p class="small muted" style="margin:12px 0 0">Mẹo: tải lên bằng tệp PDF (trong Word chọn Lưu thành PDF) thì xem trước trong app sẽ giống hệt bản gốc.</p></div>`;
+        box.querySelector('[data-fx=dl]').onclick=()=>downloadUp(id);
+        box.querySelector('[data-fx=quick]').onclick=()=>{S._quick[id]=true;renderFileInto(box,buf,mime,name,id);};return;}
+      const warn=`<div class="banner" style="margin:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span>Đây là bản xem nhanh, bố cục có thể khác bản gốc. Tải tệp gốc để xem và in chính xác.</span><button class="btn sm" type="button" data-fx="dl">Tải tệp gốc</button></div>`;
+      const addWarn=()=>{box.insertAdjacentHTML('afterbegin',warn);box.querySelector('[data-fx=dl]').onclick=()=>downloadUp(id);};
+      if(await renderDocxExact(box,buf)){addWarn();return;}
       await loadScript(MAMMOTH_URL);const r=await mammoth.convertToHtml({arrayBuffer:buf},{styleMap:['u => u']});
-      box.innerHTML=`<div class="upv-doc">${r.value.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/\son\w+="[^"]*"/gi,'')}</div>`;}
+      box.innerHTML=`<div class="upv-doc">${r.value.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/\son\w+="[^"]*"/gi,'')}</div>`;addWarn();}
   }catch(e){box.innerHTML='<div class="empty">Không xem trước được tệp này. Bấm “Tải tệp” để mở bằng Word hoặc trình đọc PDF.</div>';}}
 async function openUpPreview(id){if(!id)return;let el=$('#upv');
   if(!el){el=document.createElement('div');el.id='upv';el.className='upv';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');
@@ -1560,7 +1571,7 @@ async function openUpPreview(id){if(!id)return;let el=$('#upv');
     el.addEventListener('click',e=>{const b=e.target.closest('[data-u]');if(!b)return;if(b.dataset.u==='close'){el.hidden=true;document.body.style.overflow='';}if(b.dataset.u==='dl')downloadUp(el.dataset.id);});
     document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!el.hidden){el.hidden=true;document.body.style.overflow='';}});}
   el.dataset.id=id;el.hidden=false;document.body.style.overflow='hidden';$('#upv-title').textContent='Đang tải…';const body=$('#upv-body');body.innerHTML='<div class="empty">Đang tải tệp…</div>';
-  try{const {buf,meta}=await upBlob(id);$('#upv-title').textContent=meta.title||meta.fileName;await renderFileInto(body,buf,meta.mime,meta.fileName);}
+  try{const {buf,meta}=await upBlob(id);$('#upv-title').textContent=meta.title||meta.fileName;await renderFileInto(body,buf,meta.mime,meta.fileName,id);}
   catch(e){body.innerHTML='<div class="empty">Không tải được tệp ('+esc(e?.code||e?.message||'lỗi')+').</div>';}}
 // Tệp Word mẫu: đầu đề, ô điểm/lời phê, các phần câu hỏi mẫu, trang đáp án – để soạn trên Word rồi tải lên
 function templateExam(){const f=S.upForm||{};
@@ -1638,8 +1649,7 @@ function renderFileDetail(v,ex){const st=statusOf(ex);const c=clsOf(ex.classId);
     <div class="desk"><div class="desk-bar"><span class="small muted">Xem trước tệp đề</span></div><div class="filebox" id="filebox"></div></div>
   </div>`;
   const box=$('#filebox');const key=ex.id+':'+f.uploadId;
-  if(S._fileCache?.key===key){box.innerHTML=S._fileCache.html;return;}
-  upBlob(f.uploadId).then(({buf,meta})=>renderFileInto(box,buf,meta.mime,meta.fileName)).then(()=>{if(!box.querySelector('canvas'))S._fileCache={key,html:box.innerHTML};})
+  upBlob(f.uploadId).then(({buf,meta})=>renderFileInto(box,buf,meta.mime,meta.fileName,f.uploadId))
     .catch(e=>{box.innerHTML='<div class="empty">Không tải được tệp ('+esc(e?.code||e?.message||'lỗi')+').</div>';});}
 
 /* ================= Lớp học ================= */
