@@ -374,7 +374,7 @@ const MAX_MATERIAL=110000, CHUNK=60000;
 
 /* ================= state ================= */
 const S={db:null,user:null,sample:null,downloads:null,uid:null,me:null,isAdmin:false,canWrite:null,connected:false,signedOut:false,
-  classes:[],materials:[],exams:[],approvals:{},uploads:[],upForm:null,settings:{...DEFAULT_SETTINGS},ready:{},
+  classes:[],materials:[],exams:[],approvals:{},uploads:[],upForm:null,people:[],settings:{...DEFAULT_SETTINGS},ready:{},
   tab:'kho',openExam:null,detailView:'de',filters:{cls:'',st:'',q:''},matClass:'',openMat:null,matText:{},
   draft:null,composeView:'edit',paperView:'de',gen:null,editClass:null,errors:''};
 
@@ -395,6 +395,13 @@ function loadScript(src){return new Promise((ok,no)=>{if(document.querySelector(
 const clsOf=id=>S.classes.find(c=>c.id===id);
 function makeCode(d){const c=clsOf(d.classId);return [abbr(c?c.name:d.className||'GL'),TYPES[d.type]?.short||'KT',abbr(d.authorName||'GLV'),d.codeSuffix||'XXX'].join('-');}
 function statusOf(ex){const a=S.approvals[ex.id];if(a&&a.version===ex.version){if(a.status==='approved')return'approved';if(a.status==='returned')return'returned';}return ex.submitted?'pending':'draft';}
+// Giáo lý viên phụ trách lớp (do quản trị gán) được xem các đề đã gửi duyệt / đã duyệt của lớp đó
+function teachesClass(classId){const c=clsOf(classId);return !!(S.uid&&c&&(c.teacherIds||[]).includes(S.uid));}
+function visibleExams(){return S.isAdmin?S.exams:S.exams.filter(e=>e.creatorId===S.uid||(teachesClass(e.classId)&&(e.submitted||e.kind==='file'||statusOf(e)==='approved')));}
+function peopleName(id){return S.people.find(x=>x.id===id)?.name||'';}
+async function loadPeople(){try{if(window.__api){S.people=(await window.__api('/people')).people||[];}
+  else{const sn=await S.db.collection('people').get();S.people=sn.docs.map(d=>({id:d.id,...d.data()}));}
+  S.people.sort((a,b)=>(a.name||'').localeCompare(b.name||'','vi'));}catch{S.people=[];}}
 function canEditExam(ex){return !!ex&&(S.isAdmin||(S.uid&&ex.creatorId===S.uid));}
 function writable(){return S.connected&&S.canWrite!==false;}
 
@@ -779,11 +786,11 @@ function renderKho(){
   const v=$('#v-kho');
   if(S.openExam){const ex=S.exams.find(e=>e.id===S.openExam);if(ex)return renderDetail(v,ex);S.openExam=null;}
   const f=S.filters;
-  const visible=S.isAdmin?S.exams:S.exams.filter(e=>e.creatorId===S.uid);
+  const visible=visibleExams();
   let list=visible.filter(e=>(!f.cls||e.classId===f.cls)&&(!f.st||statusOf(e)===f.st)&&(!f.q||noMark((e.title||'')+' '+(e.code||'')+' '+(e.authorName||'')).toLowerCase().includes(noMark(f.q).toLowerCase())));
   const pend=visible.filter(e=>statusOf(e)==='pending').length,appr=visible.filter(e=>statusOf(e)==='approved').length;
   const settingsHint=S.connected&&S.ready.settings&&S.settings.parish===DEFAULT_SETTINGS.parish&&S.isAdmin?`<div class="banner info">Vào <b>Cài đặt</b> để điền tên Giáo phận, Giáo xứ in trên đầu đề thi.</div>`:'';
-  v.innerHTML=`${settingsHint}<div class="page-head"><div><h1>Kho đề thi</h1><p>${S.isAdmin?'Toàn bộ đề của các giáo lý viên. Quản trị mở lại để xem, xuất Word và ký duyệt.':'Các đề do bạn soạn. Đề của giáo lý viên khác chỉ quản trị xem được.'}</p></div>
+  v.innerHTML=`${settingsHint}<div class="page-head"><div><h1>Kho đề thi</h1><p>${S.isAdmin?'Toàn bộ đề của các giáo lý viên. Quản trị mở lại để xem, xuất Word và ký duyệt.':'Các đề do bạn soạn và các đề đã gửi duyệt của lớp bạn phụ trách. Đề của lớp khác chỉ quản trị xem được.'}</p></div>
     ${S.me&&S.me.role!=='guest'&&S.downloads?'<div class="row"><button class="btn" data-act="uptpl" title="Tải tệp Word mẫu có sẵn đầu đề, ô điểm, lời phê, ô ký duyệt để soạn đề trên Word">⬇ Tải mẫu đề Word</button>':'<div class="row">'}${writable()?'<button class="btn" data-act="upnew">⇪ Tải đề có sẵn lên</button><button class="btn primary" data-act="new">+ Soạn đề mới</button>':''}</div></div>
     ${upFormHTML()}${upListHTML()}
     <div class="stats"><span><b>${visible.length}</b> đề</span><span><b>${pend}</b> chờ duyệt</span><span><b>${appr}</b> đã duyệt</span><span><b>${S.classes.length}</b> lớp</span></div>
@@ -791,7 +798,7 @@ function renderKho(){
       <select id="f-st" aria-label="Lọc theo trạng thái"><option value="">Mọi trạng thái</option>${Object.entries(STATUS).map(([k,l])=>`<option value="${k}" ${f.st===k?'selected':''}>${l}</option>`).join('')}</select>
       <input type="text" id="f-q" placeholder="Tìm theo tên đề, mã đề, người ra đề" value="${esc(f.q)}"></div>
     ${!S.ready.exams&&S.connected?'<div class="empty">Đang tải kho đề…</div>':list.length?`<div class="exlist">${list.map(e=>{const st=statusOf(e);const c=clsOf(e.classId);
-      return `<button class="exrow" data-open="${e.id}"><div><div class="t">${esc(e.title||'(Chưa đặt tên)')}</div><div class="m">${esc(c?.name||e.className||'')} · ${esc(TYPES[e.type]?.label||'')} · ${e.kind==='file'?'Tệp '+fileKind(e.file):(e.questions||[]).length+' câu'} · ${esc(e.authorName||'')}</div></div>
+      return `<button class="exrow" data-open="${e.id}"><div><div class="t">${esc(e.title||'(Chưa đặt tên)')}</div><div class="m">${esc(c?.name||e.className||'')} · ${esc(TYPES[e.type]?.label||'')} · ${e.kind==='file'?'Tệp '+fileKind(e.file):(e.questions||[]).length+' câu'} · ${esc(e.authorName||'')}${!S.isAdmin&&e.creatorId!==S.uid?' · <b>đề của lớp bạn phụ trách</b>':''}</div></div>
       <div class="side"><span class="chip st-${st}">${STATUS[st]}</span><span class="code">${esc(e.code||'')}</span><span class="small muted">${dmy(e.updatedAt)}</span></div></button>`;}).join('')}</div>`
       :`<div class="empty"><h3>${visible.length?'Không có đề nào khớp bộ lọc':'Chưa có đề thi nào'}</h3><p>${visible.length?'Thử bỏ bớt điều kiện lọc.':'Tạo lớp, nhập giáo trình rồi bấm “Soạn đề mới”. Đề đã lưu sẽ hiện ở đây.'}</p></div>`}`;
 }
@@ -1662,20 +1669,24 @@ function renderLop(){
       <label class="f">GLV chủ nhiệm<input type="text" id="lc-home" value="${esc(ed.homeroom||'')}" placeholder="Tên Thánh, họ và tên"></label>
       <label class="f">Sĩ số<input type="number" id="lc-size" min="0" value="${ed.size||''}"></label>
       <label class="f">Phòng / giờ học<input type="text" id="lc-room" value="${esc(ed.room||'')}" placeholder="Ví dụ: Phòng 3 · Chúa nhật 8g"></label></div>
+      ${S.isAdmin?`<fieldset class="f" style="border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;margin:0"><legend style="font-weight:600;font-size:13px;padding:0 4px">Tài khoản giáo lý viên phụ trách lớp (được xem kho đề của lớp)</legend>
+        ${S.people.length?`<div style="display:flex;flex-wrap:wrap;gap:6px 16px">${S.people.map(u=>`<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" class="lc-t" value="${esc(u.id)}" ${(ed.teacherIds||[]).includes(u.id)?'checked':''}>${esc(u.name||'(chưa có tên)')}</label>`).join('')}</div>`:'<p class="small muted" style="margin:0">Chưa có tài khoản nào. '+(window.__api?'Tạo tài khoản trong Cài đặt.':'Giáo lý viên cần mở ứng dụng ít nhất một lần để có tên trong danh sách.')+'</p>'}
+        <p class="small muted" style="margin:6px 0 0">Người được chọn thấy các đề đã gửi duyệt hoặc đã duyệt của lớp này (xem, xuất Word, tải tệp), nhưng không sửa hay xoá đề của người khác.</p></fieldset>`:''}
       <div class="row"><button class="btn primary" data-a="savecls">Lưu lớp</button><button class="btn ghost" data-a="cancel">Huỷ</button></div></div></div>`:'';
   v.innerHTML=`<div class="page-head"><div><h1>Lớp học</h1><p>Mỗi lớp có giáo trình riêng; đề thi được lưu theo lớp để chủ nhiệm xem lại.</p></div>${writable()&&!ed?'<button class="btn primary" data-a="newcls">+ Thêm lớp</button>':''}</div>${form}
-  ${!S.ready.classes&&S.connected?'<div class="empty">Đang tải…</div>':S.classes.length?`<div class="cards">${S.classes.map(c=>{const nm=S.materials.filter(m=>m.classId===c.id).length,ne=S.exams.filter(e=>e.classId===c.id).length;
-    return `<div class="ccard"><div class="small muted" style="letter-spacing:.06em;font-weight:600">NGÀNH ${esc((c.branch||'').toUpperCase())}</div><h3>${esc(c.name)}</h3><dl class="kv"><dt>Năm học</dt><dd>${esc(c.year||'')}</dd><dt>Chủ nhiệm</dt><dd>${esc(c.homeroom||'—')}</dd><dt>Sĩ số</dt><dd>${c.size||'—'}</dd>${c.room?`<dt>Phòng</dt><dd>${esc(c.room)}</dd>`:''}<dt>Giáo trình</dt><dd>${nm} tài liệu</dd><dt>Đề thi</dt><dd>${ne} đề</dd></dl>
+  ${!S.ready.classes&&S.connected?'<div class="empty">Đang tải…</div>':S.classes.length?`<div class="cards">${S.classes.map(c=>{const nm=S.materials.filter(m=>m.classId===c.id).length,ne=visibleExams().filter(e=>e.classId===c.id).length;const tn=(c.teacherIds||[]).map(peopleName).filter(Boolean);
+    return `<div class="ccard"><div class="small muted" style="letter-spacing:.06em;font-weight:600">NGÀNH ${esc((c.branch||'').toUpperCase())}</div><h3>${esc(c.name)}</h3><dl class="kv"><dt>Năm học</dt><dd>${esc(c.year||'')}</dd><dt>Chủ nhiệm</dt><dd>${esc(c.homeroom||'—')}</dd>${tn.length?`<dt>Tài khoản phụ trách</dt><dd>${esc(tn.join(', '))}</dd>`:''}<dt>Sĩ số</dt><dd>${c.size||'—'}</dd>${c.room?`<dt>Phòng</dt><dd>${esc(c.room)}</dd>`:''}<dt>Giáo trình</dt><dd>${nm} tài liệu</dd><dt>Đề thi</dt><dd>${ne} đề</dd></dl>
       <div class="acts"><button class="btn sm" data-a="mats" data-id="${c.id}">Giáo trình</button><button class="btn sm" data-a="exams" data-id="${c.id}">Xem đề</button>${writable()?`<button class="btn sm" data-a="compose" data-id="${c.id}">Soạn đề</button><button class="btn sm" data-a="upexam" data-id="${c.id}">Tải đề lên</button><button class="btn sm ghost" data-a="editcls" data-id="${c.id}">Sửa</button><button class="btn sm ghost danger" data-a="delcls" data-id="${c.id}">Xoá</button>`:''}</div></div>`;}).join('')}</div>`
   :`<div class="empty"><h3>Chưa có lớp nào</h3><p>Thêm lớp đầu tiên, ví dụ “Rước Lễ 2B” hay “Thêm Sức 1A”.</p></div>`}`;
 }
 $('#v-lop').addEventListener('click',async e=>{const t=e.target.closest('[data-a]');if(!t)return;const a=t.dataset.a,id=t.dataset.id;
-  if(a==='newcls'){S.editClass={branch:'Thêm Sức'};renderLop();$('#lc-name')?.focus();}
+  if(a==='newcls'){S.editClass={branch:'Thêm Sức'};if(S.isAdmin)await loadPeople();renderLop();$('#lc-name')?.focus();}
   if(a==='upexam'){S.upForm={classId:id};S.openExam=null;setTab('kho');window.scrollTo(0,0);setTimeout(()=>$('#up-title')?.focus(),50);return;}
-  if(a==='editcls'){S.editClass={...clsOf(id)};renderLop();window.scrollTo(0,0);}
+  if(a==='editcls'){S.editClass={...clsOf(id)};if(S.isAdmin)await loadPeople();renderLop();window.scrollTo(0,0);}
   if(a==='cancel'){S.editClass=null;renderLop();}
   if(a==='savecls'){const name=$('#lc-name').value.trim();if(!name){toast('Nhập tên lớp.');return;}
     const rec={name,branch:$('#lc-branch').value,year:$('#lc-year').value.trim(),homeroom:$('#lc-home').value.trim(),size:+$('#lc-size').value||0,room:$('#lc-room').value.trim(),updatedAt:Date.now()};
+    if(S.isAdmin&&$('.lc-t'))rec.teacherIds=[...document.querySelectorAll('.lc-t:checked')].map(x=>x.value);
     const ed=S.editClass;const ok=await safeWrite(()=>ed.id?S.db.doc('classes/'+ed.id).update(rec):S.db.collection('classes').add({...rec,createdAt:Date.now(),createdBy:S.uid}),'Đã lưu lớp '+name+'.');
     if(ok){S.editClass=null;renderLop();}}
   if(a==='delcls'){if(t.dataset.confirm!=='1'){t.dataset.confirm='1';t.textContent='Bấm lần nữa';setTimeout(()=>{if(t.isConnected){t.dataset.confirm='';t.textContent='Xoá';}},4000);return;}
@@ -1798,6 +1809,8 @@ render();
   db.collection('exams').orderBy('updatedAt','desc').limit(500).onSnapshot(s=>{S.exams=s.docs.map(d=>({id:d.id,...d.data()}));S.ready.exams=true;refreshFromData();},onErr);
   db.collection('approvals').onSnapshot(s=>{S.approvals=Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));refreshFromData();},onErr);
   db.collection('uploads').onSnapshot(s=>{S.uploads=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));S.ready.uploads=true;refreshFromData();},onErr);
+  if(S.uid&&!window.__api&&S.me?.name)db.doc('people/'+S.uid).set({name:S.me.name,at:Date.now()}).catch(()=>{});
+  loadPeople().then(()=>{if(S.tab==='lop'&&!S.editClass)renderLop();});
   db.collection('bank').onSnapshot(s=>{S.bank=s.docs.map(d=>({id:d.id,...d.data()}));S.ready.bank=true;refreshFromData();},onErr);
   db.doc('settings/general').onSnapshot(s=>{S.settings={...DEFAULT_SETTINGS,...(s.exists?s.data():{})};S.ready.settings=true;refreshFromData();},onErr);
   render();
